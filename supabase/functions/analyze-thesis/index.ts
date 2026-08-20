@@ -15,6 +15,7 @@ type MarketData = {
   quote: Record<string, unknown>;
   history: Array<{ date: string; close: number }>;
   fundamentals: Array<{ label: string; value: string }>;
+  technicals: Array<{ label: string; value: string }>;
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -94,12 +95,91 @@ async function fetchYahooSearch(ticker: string) {
   }
 }
 
+function yahooTickerCandidates(rawTicker: string) {
+  const ticker = rawTicker.trim().toUpperCase();
+  const candidates = new Set<string>();
+  candidates.add(ticker);
+  if (ticker.includes(":")) {
+    const [symbol, exchange] = ticker.split(":");
+    const suffixByExchange: Record<string, string> = {
+      EGX: ".CA",
+      CAI: ".CA",
+      AMS: ".AS",
+      AS: ".AS",
+      HKEX: ".HK",
+      HKG: ".HK",
+      SGX: ".SI",
+      SG: ".SI",
+      LSE: ".L",
+      LON: ".L",
+      TSE: ".TO",
+      TSX: ".TO",
+      NSE: ".NS",
+      BSE: ".BO",
+    };
+    candidates.add(symbol);
+    if (suffixByExchange[exchange]) candidates.add(`${symbol}${suffixByExchange[exchange]}`);
+  }
+  return [...candidates].filter(Boolean);
+}
+
+function average(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function closeAtOffset(values: number[], days: number) {
+  if (!values.length) return null;
+  return values[Math.max(0, values.length - 1 - days)] ?? null;
+}
+
+function percentChange(now: number, then: number | null) {
+  return Number.isFinite(now) && Number.isFinite(then) && then ? ((now - Number(then)) / Number(then)) * 100 : null;
+}
+
+function buildTechnicals(history: Array<{ close: number }>) {
+  const closes = history.map((point) => point.close).filter(Number.isFinite);
+  const last = closes.at(-1);
+  if (!Number.isFinite(last)) return [];
+  const sma50 = average(closes.slice(-50));
+  const sma200 = average(closes.slice(-200));
+  const high52 = Math.max(...closes);
+  const low52 = Math.min(...closes);
+  const ret1m = percentChange(Number(last), closeAtOffset(closes, 21));
+  const ret3m = percentChange(Number(last), closeAtOffset(closes, 63));
+  const ret1y = percentChange(Number(last), closeAtOffset(closes, 252));
+  const trend = sma50 && sma200 ? (sma50 > sma200 ? "alcista (SMA50 > SMA200)" : "debil/bajista (SMA50 <= SMA200)") : "insuficiente";
+  return [
+    { label: "Tendencia tecnica", value: trend },
+    sma50 ? { label: "SMA 50", value: sma50.toFixed(2) } : null,
+    sma200 ? { label: "SMA 200", value: sma200.toFixed(2) } : null,
+    Number.isFinite(ret1m) ? { label: "Retorno 1m", value: `${Number(ret1m).toFixed(2)}%` } : null,
+    Number.isFinite(ret3m) ? { label: "Retorno 3m", value: `${Number(ret3m).toFixed(2)}%` } : null,
+    Number.isFinite(ret1y) ? { label: "Retorno 1y", value: `${Number(ret1y).toFixed(2)}%` } : null,
+    { label: "Max 52s", value: high52.toFixed(2) },
+    { label: "Min 52s", value: low52.toFixed(2) },
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+}
+
 async function fetchYahooMarketData(asset: Record<string, unknown>): Promise<MarketData> {
-  const ticker = String(asset.ticker || "").trim();
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`;
-  const [chartResponse, search] = await Promise.all([fetch(url), fetchYahooSearch(ticker)]);
-  if (!chartResponse.ok) throw new Error(`Yahoo Chart HTTP ${chartResponse.status}`);
-  const chart = (await chartResponse.json())?.chart?.result?.[0];
+  const rawTicker = String(asset.ticker || "").trim();
+  let chart: any = null;
+  let search: any = null;
+  let resolvedTicker = rawTicker;
+  for (const candidate of yahooTickerCandidates(rawTicker)) {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(candidate)}?range=1y&interval=1d`;
+    const chartResponse = await fetch(url);
+    if (!chartResponse.ok) continue;
+    const result = (await chartResponse.json())?.chart?.result?.[0];
+    const timestamps = result?.timestamp || [];
+    const closes = result?.indicators?.quote?.[0]?.close || [];
+    if (timestamps.length && closes.some((value: unknown) => Number.isFinite(Number(value)))) {
+      chart = result;
+      resolvedTicker = candidate;
+      search = await fetchYahooSearch(candidate);
+      break;
+    }
+  }
+  if (!chart) throw new Error(`Yahoo Chart sin datos para ${rawTicker}`);
   const meta = chart?.meta || {};
   const timestamps = chart?.timestamp || [];
   const closes = chart?.indicators?.quote?.[0]?.close || [];
@@ -109,7 +189,8 @@ async function fetchYahooMarketData(asset: Record<string, unknown>): Promise<Mar
   const price = Number(meta.regularMarketPrice || history.at(-1)?.close);
   const previous = Number(history.at(-2)?.close || meta.chartPreviousClose || price);
   const quote = {
-    ticker,
+    ticker: rawTicker,
+    yahooSymbol: resolvedTicker,
     company: search?.longname || search?.shortname || asset.company || "",
     sector: search?.sector || asset.sector || "",
     assetType: search?.quoteType || "",
@@ -120,13 +201,15 @@ async function fetchYahooMarketData(asset: Record<string, unknown>): Promise<Mar
     source: "Yahoo Chart",
   };
   const fundamentals = [
+    resolvedTicker !== rawTicker ? { label: "Simbolo Yahoo", value: resolvedTicker } : null,
     search?.quoteType ? { label: "Tipo de activo", value: String(search.quoteType) } : null,
     search?.exchange ? { label: "Bolsa", value: String(search.exchange) } : null,
     meta.currency ? { label: "Moneda", value: String(meta.currency) } : null,
     Number.isFinite(price) ? { label: "Precio actual", value: String(price) } : null,
     history.length ? { label: "Historico Yahoo", value: `${history.length} cierres diarios` } : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
-  return { quote, history, fundamentals };
+  const technicals = buildTechnicals(history);
+  return { quote, history, fundamentals, technicals };
 }
 
 function buildPrompt(asset: Record<string, unknown>, position: Record<string, unknown>, sources: SearchResult[], marketData: MarketData | null) {
@@ -143,7 +226,7 @@ function buildPrompt(asset: Record<string, unknown>, position: Record<string, un
 - actions array
 - assetPatch object con company, sector, currency, price, changePercent, thesis, drivers, breakers, risks, events, fundamentals
 
-assetPatch.events debe incluir resultados, dividendos y catalizadores si aparecen en fuentes o datos del usuario. assetPatch.fundamentals debe ser una lista compacta de metricas label/value encontradas en fuentes, sin inventar.
+assetPatch.events debe incluir resultados, dividendos y catalizadores si aparecen en fuentes o datos del usuario. assetPatch.fundamentals debe incluir datos de mercado, tecnico, valoracion, deuda, caja, crecimiento, guia y dividendos cuando existan en Datos Yahoo/mercado o Fuentes Brave, sin inventar.
 
 Ticker: ${asset.ticker || "no indicado"}
 Empresa: ${asset.company || "no indicada"}
@@ -160,7 +243,7 @@ Eventos: ${JSON.stringify(asset.events || [])}
 Fuentes Brave:
 ${webSection}
 
-Si faltan datos, dilo claramente y baja la confianza, pero rellena assetPatch con todos los datos verificables disponibles en Datos Yahoo/mercado y Fuentes Brave. No inventes deuda, caja, crecimiento, guia ni valoracion: si no aparecen, incluyelos en risks/actions como datos pendientes. Cita fuentes solo cuando esten en snippets, datos Yahoo/mercado o datos del usuario.`;
+Si Datos Yahoo/mercado incluye precio o cambio porcentual, NO digas que falta precio o cambio. Si incluye technicals, incluye analisis tecnico en summary/drivers/risks y copia esos technicals a assetPatch.fundamentals. Si faltan deuda, caja, crecimiento, guia, valoracion o dividendos, primero intenta extraerlos de Fuentes Brave; solo si no aparecen, incluyelos como datos pendientes en actions. Cita fuentes solo cuando esten en snippets, datos Yahoo/mercado o datos del usuario.`;
 }
 
 function buildDiscoveryPrompt(thesis: string, sources: SearchResult[]) {
@@ -355,8 +438,9 @@ Deno.serve(async (request) => {
     const company = String(enrichedAsset.company || ticker);
     const queries = [
       buildBraveQuery(enrichedAsset),
-      `${ticker} ${company} valuation debt cash revenue growth guidance latest quarterly results`,
-      `${ticker} ${company} dividend earnings calendar next results balance sheet free cash flow`,
+      `${ticker} ${company} valuation PE ratio EV EBITDA debt cash revenue growth guidance latest quarterly results`,
+      `${ticker} ${company} dividend yield payout earnings calendar next results balance sheet free cash flow`,
+      `${ticker} ${company} stock technical analysis moving average RSI 52 week high low`,
     ];
     const webParts = await Promise.all(queries.map((query) => braveSearch(query, { ...(body.search || {}), count: 5 })));
     const sources = webParts.flatMap((part) => part.sources).filter((source, index, all) => source.url && all.findIndex((item) => item.url === source.url) === index).slice(0, 12);

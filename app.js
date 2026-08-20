@@ -689,7 +689,7 @@ function applyMarketData(ticker, marketData = {}) {
     currency: quote.currency || asset.currency,
     price: Number.isFinite(Number(quote.price)) ? Number(quote.price) : asset.price,
     changePercent: Number.isFinite(Number(quote.changePercent)) ? Number(quote.changePercent) : asset.changePercent,
-    fundamentals: mergeFundamentals(asset.fundamentals, marketData.fundamentals || []),
+    fundamentals: mergeFundamentals(asset.fundamentals, [...(marketData.fundamentals || []), ...(marketData.technicals || [])]),
     updatedAt: new Date().toISOString(),
   };
   if (Array.isArray(marketData.history) && marketData.history.length) state.priceHistoryByTicker[ticker] = marketData.history;
