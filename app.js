@@ -4,7 +4,7 @@ const APP_CONFIG = {
   supabaseAnonKey: "sb_publishable_olGEIuWleNo6N-C-5HN3DA_dQ3VVYMw",
 };
 
-const routes = ["watchlist", "detail", "report", "thesis", "history", "calendar", "add", "discovery", "settings"];
+const routes = ["watchlist", "detail", "report", "thesis", "history", "add", "discovery", "settings"];
 const routeHistory = ["watchlist"];
 const DATA_SOURCES = [
   { id: "stooq", label: "Stooq CSV" },
@@ -273,7 +273,7 @@ function renderWatchlist() {
     <div class="quick-actions" aria-label="Accesos rapidos">
       <button data-route="add" type="button">${icon("plus")}<span>Anadir activo</span></button>
       <button data-refresh-market type="button">${icon("refresh")}<span>Actualizar precios</span></button>
-      <button data-route="calendar" type="button">${icon("calendar")}<span>Calendario</span></button>
+      <button data-route="thesis" type="button">${icon("calendar")}<span>Eventos</span></button>
       <button data-route="settings" type="button">${icon("settings")}<span>Sincronizacion</span></button>
     </div>
     <div class="section-row">
@@ -413,7 +413,7 @@ function renderThesis() {
     <article class="panel checklist"><h2>Drivers</h2>${listItems(asset.drivers, "ok-dot", "Sin drivers definidos.")}</article>
     <article class="panel checklist"><h2>Breakers</h2>${listItems(asset.breakers, "bad-dot", "Sin breakers definidos.")}</article>
     <article class="panel checklist"><h2>Riesgos</h2>${listItems(asset.risks, "warn-dot", "Sin riesgos definidos.")}</article>
-    <article class="panel event-list"><h2>Eventos</h2>${eventItems(asset.events)}</article>
+    <article class="panel event-list"><h2>Calendario</h2>${eventItems(asset.events)}</article>
   `;
 }
 
@@ -439,18 +439,6 @@ function renderHistory() {
     </article>
     <div class="calendar-list">
       ${history.length ? history.map((report) => `<button class="calendar-row" type="button" data-route="report"><span class="calendar-date">${escapeHtml(formatTimestamp(report.createdAt))}</span><span><h3>${Number.isFinite(report.score) ? `${report.score}/100` : "Sin score"}</h3><p>${escapeHtml(report.thesisStatus || report.summary || "Informe guardado")}</p></span></button>`).join("") : `<article class="panel empty-state"><h2>Sin serie</h2><p>Analiza el ticker varias veces para construir la evolucion real de la tesis.</p></article>`}
-    </div>
-  `;
-}
-
-function renderCalendar() {
-  const rows = portfolioAssets()
-    .flatMap((asset) => (asset.events || []).map((event) => ({ asset, event })))
-    .sort((a, b) => String(a.event.date || "").localeCompare(String(b.event.date || "")));
-  document.querySelector("#screen-calendar").innerHTML = `
-    <article class="panel"><h2>Calendario</h2><p>Solo contiene eventos que tu introduzcas o que importemos desde una fuente real.</p></article>
-    <div class="calendar-list">
-      ${rows.length ? rows.map(({ asset, event }) => `<button class="calendar-row" type="button" data-open-ticker="${asset.ticker}" data-route="detail"><span class="calendar-date">${escapeHtml(event.date || "Sin fecha")}</span><span><h3>${escapeHtml(asset.ticker)}</h3><p>${escapeHtml(event.type || "Evento")} - ${escapeHtml(event.note || "")}</p></span></button>`).join("") : `<article class="panel empty-state"><h2>Sin eventos</h2><p>Edita un activo para anadir resultados, dividendos o catalizadores.</p></article>`}
     </div>
   `;
 }
@@ -522,7 +510,6 @@ function renderActiveScreen(route) {
   if (route === "report") renderReport();
   if (route === "thesis") renderThesis();
   if (route === "history") renderHistory();
-  if (route === "calendar") renderCalendar();
   if (route === "add") renderSearch();
   if (route === "discovery") renderDiscovery();
   if (route === "settings") renderSettings();
@@ -793,7 +780,7 @@ function renderDiscoveryResults(suggestions) {
   const box = document.querySelector("#discoveryResults");
   if (!box) return;
   box.innerHTML = suggestions.length
-    ? suggestions.map((item) => `<article class="asset-row"><button class="asset-main" type="button" data-add-suggestion="${escapeHtml(item.ticker || "")}" data-company="${escapeHtml(item.company || "")}" data-sector="${escapeHtml(item.sector || "")}" data-thesis="${escapeHtml(item.rationale || "")}"><span class="logo-mark">${logoText(item.ticker || "")}</span><span><h3>${escapeHtml(item.ticker || "")}</h3><p>${escapeHtml(item.company || "")}<br>${escapeHtml(item.rationale || "")}</p></span><span class="asset-price"><strong>${escapeHtml(String(item.score || ""))}</strong><p>score</p></span></button></article>`).join("")
+    ? suggestions.map((item) => `<article class="asset-row"><button class="asset-main" type="button" data-add-suggestion="${escapeHtml(item.ticker || "")}" data-company="${escapeHtml(item.company || "")}" data-sector="${escapeHtml(item.sector || item.assetType || "")}" data-thesis="${escapeHtml(item.rationale || "")}"><span class="logo-mark">${logoText(item.ticker || "")}</span><span><h3>${escapeHtml(item.ticker || "")}</h3><p>${escapeHtml(item.assetType || item.sector || "Activo")} - ${escapeHtml(item.company || "")}<br>${escapeHtml(item.rationale || "")}</p></span><span class="asset-price"><strong>${escapeHtml(String(item.score || ""))}</strong><p>score</p></span></button></article>`).join("")
     : `<article class="panel empty-state"><h2>Sin resultados</h2><p>La API no devolvio candidatos utilizables.</p></article>`;
 }
 
