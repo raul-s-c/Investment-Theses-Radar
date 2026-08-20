@@ -39,14 +39,14 @@ function isAuthorized(request: Request) {
 function buildBraveQuery(asset: Record<string, unknown>) {
   const ticker = String(asset.ticker || "").trim();
   const company = String(asset.company || ticker).trim();
-  return `${ticker} ${company} latest results dividend earnings investment thesis risks`;
+  return `${ticker} ${company} current stock price valuation fundamentals latest results earnings dividend calendar financials investment thesis risks`;
 }
 
-async function braveSearch(asset: Record<string, unknown>, search: Record<string, unknown>) {
+async function braveSearch(queryOrAsset: string | Record<string, unknown>, search: Record<string, unknown>) {
   const apiKey = Deno.env.get("BRAVE_SEARCH_API_KEY");
   if (!apiKey) throw new Error("Falta el secret BRAVE_SEARCH_API_KEY en Supabase");
 
-  const query = buildBraveQuery(asset);
+  const query = typeof queryOrAsset === "string" ? queryOrAsset : buildBraveQuery(queryOrAsset);
   const url = new URL("https://api.search.brave.com/res/v1/web/search");
   url.searchParams.set("q", query);
   url.searchParams.set("count", String(search.count || 8));
@@ -78,7 +78,16 @@ function buildPrompt(asset: Record<string, unknown>, position: Record<string, un
     ? sources.map((item, index) => `${index + 1}. ${item.title}\nURL: ${item.url}\nSnippet: ${item.description}`).join("\n\n")
     : "No se aportan resultados web. No busques por tu cuenta.";
 
-  return `Eres un analista de inversion. No uses web search propia ni herramientas externas. Analiza solo los datos proporcionados y las fuentes Brave incluidas. Devuelve JSON valido con estas claves: score number 0-100 si hay datos suficientes, thesisStatus string, summary string, drivers array, risks array, actions array.
+  return `Eres un analista de inversion. No uses web search propia ni herramientas externas. Analiza solo los datos proporcionados y las fuentes Brave incluidas. Devuelve JSON valido con estas claves:
+- score number 0-100 si hay datos suficientes
+- thesisStatus string
+- summary string
+- drivers array
+- risks array
+- actions array
+- assetPatch object con company, sector, currency, price, changePercent, thesis, drivers, breakers, risks, events, fundamentals
+
+assetPatch.events debe incluir resultados, dividendos y catalizadores si aparecen en fuentes o datos del usuario. assetPatch.fundamentals debe ser una lista compacta de metricas label/value encontradas en fuentes, sin inventar.
 
 Ticker: ${asset.ticker || "no indicado"}
 Empresa: ${asset.company || "no indicada"}
@@ -95,6 +104,17 @@ Fuentes Brave:
 ${webSection}
 
 Si faltan datos, dilo claramente y baja la confianza. No inventes fundamentales, noticias, dividendos, resultados ni precios. Cita fuentes solo cuando esten en los snippets o en datos del usuario.`;
+}
+
+function buildDiscoveryPrompt(thesis: string, sources: SearchResult[]) {
+  const webSection = sources.map((item, index) => `${index + 1}. ${item.title}\nURL: ${item.url}\nSnippet: ${item.description}`).join("\n\n");
+  return `Eres un analista de inversion. Devuelve JSON valido con una clave suggestions, array de hasta 8 activos cotizados que encajen con la tesis. Cada item debe tener ticker, company, sector, rationale, score number 0-100. Usa solo estas fuentes Brave y la tesis del usuario. No inventes tickers.
+
+Tesis del usuario:
+${thesis}
+
+Fuentes Brave:
+${webSection}`;
 }
 
 function extractOutputText(data: Record<string, unknown>) {
@@ -135,8 +155,49 @@ async function openAiReport(model: string, prompt: string) {
               drivers: { type: "array", items: { type: "string" } },
               risks: { type: "array", items: { type: "string" } },
               actions: { type: "array", items: { type: "string" } },
+              assetPatch: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  company: { type: "string" },
+                  sector: { type: "string" },
+                  currency: { type: "string" },
+                  price: { type: "string" },
+                  changePercent: { type: "string" },
+                  thesis: { type: "string" },
+                  drivers: { type: "array", items: { type: "string" } },
+                  breakers: { type: "array", items: { type: "string" } },
+                  risks: { type: "array", items: { type: "string" } },
+                  events: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        type: { type: "string" },
+                        date: { type: "string" },
+                        note: { type: "string" },
+                      },
+                      required: ["type", "date", "note"],
+                    },
+                  },
+                  fundamentals: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        label: { type: "string" },
+                        value: { type: "string" },
+                      },
+                      required: ["label", "value"],
+                    },
+                  },
+                },
+                required: ["company", "sector", "currency", "price", "changePercent", "thesis", "drivers", "breakers", "risks", "events", "fundamentals"],
+              },
             },
-            required: ["score", "thesisStatus", "summary", "drivers", "risks", "actions"],
+            required: ["score", "thesisStatus", "summary", "drivers", "risks", "actions", "assetPatch"],
           },
         },
       },
@@ -154,6 +215,56 @@ async function openAiReport(model: string, prompt: string) {
   }
 }
 
+async function openAiDiscovery(model: string, prompt: string) {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey) throw new Error("Falta el secret OPENAI_API_KEY en Supabase");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      input: prompt,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "thesis_discovery",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              suggestions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    ticker: { type: "string" },
+                    company: { type: "string" },
+                    sector: { type: "string" },
+                    rationale: { type: "string" },
+                    score: { type: "number" },
+                  },
+                  required: ["ticker", "company", "sector", "rationale", "score"],
+                },
+              },
+            },
+            required: ["suggestions"],
+          },
+        },
+      },
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
+  const outputText = extractOutputText(data);
+  try {
+    return JSON.parse(outputText);
+  } catch {
+    return { suggestions: [] };
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
@@ -161,11 +272,19 @@ Deno.serve(async (request) => {
 
   try {
     const body = await request.json();
+    const model = String(body.model || Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini");
+    if (body.mode === "discovery") {
+      const thesis = String(body.thesis || "").trim();
+      if (!thesis) return jsonResponse({ error: "Falta thesis" }, 400);
+      const web = await braveSearch(`${thesis} public companies stocks tickers fundamentals`, body.search || {});
+      const result = await openAiDiscovery(model, buildDiscoveryPrompt(thesis, web.sources));
+      return jsonResponse({ ...result, sources: web.sources, query: web.query, model, usedWebSearch: true });
+    }
+
     const asset = body.asset || {};
     if (!asset.ticker) return jsonResponse({ error: "Falta asset.ticker" }, 400);
 
-    const model = String(body.model || Deno.env.get("OPENAI_MODEL") || "gpt-5.4-mini");
-    const web = body.includeWeb ? await braveSearch(asset, body.search || {}) : { query: "", sources: [] };
+    const web = await braveSearch(asset, body.search || {});
     const prompt = buildPrompt(asset, body.position || {}, web.sources);
     const report = await openAiReport(model, prompt);
 

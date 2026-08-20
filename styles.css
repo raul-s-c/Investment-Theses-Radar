@@ -771,7 +771,7 @@ meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--gre
   inset: auto 0 0;
   height: 74px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   border-top: 1px solid var(--line);
   background: rgba(3, 18, 26, 0.94);
   backdrop-filter: blur(18px);
@@ -784,7 +784,7 @@ meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--gre
   border: 0;
   color: var(--muted);
   background: transparent;
-  font-size: 10px;
+  font-size: 9px;
 }
 .bottom-nav button.is-active { color: var(--blue); }
 .bottom-nav svg { width: 20px; height: 20px; }

@@ -25,6 +25,7 @@ function defaultState() {
     assetsByTicker: {},
     positionsByTicker: {},
     reportsByTicker: {},
+    reportHistoryByTicker: {},
     quoteStatusByTicker: {},
     lastDataRefresh: null,
     sync: {
@@ -66,6 +67,7 @@ function mergeState(base, saved) {
     assetsByTicker: { ...base.assetsByTicker, ...saved.assetsByTicker },
     positionsByTicker: { ...base.positionsByTicker, ...saved.positionsByTicker },
     reportsByTicker: { ...base.reportsByTicker, ...saved.reportsByTicker },
+    reportHistoryByTicker: { ...base.reportHistoryByTicker, ...saved.reportHistoryByTicker },
     quoteStatusByTicker: { ...base.quoteStatusByTicker, ...saved.quoteStatusByTicker },
     sync: { ...base.sync, ...saved.sync },
     ai: { ...base.ai, ...saved.ai },
@@ -130,6 +132,14 @@ function assetByTicker(ticker = activeTicker()) {
   return ticker ? state.assetsByTicker[ticker] : null;
 }
 
+function reportHistory(ticker = activeTicker()) {
+  return ticker ? state.reportHistoryByTicker?.[ticker] || [] : [];
+}
+
+function latestReport(ticker = activeTicker()) {
+  return reportHistory(ticker)[0] || state.reportsByTicker?.[ticker] || null;
+}
+
 function portfolioAssets() {
   return state.portfolio.map((ticker) => state.assetsByTicker[ticker]).filter(Boolean);
 }
@@ -170,6 +180,32 @@ function reportTone(report) {
   if (report.score >= 65) return "good";
   if (report.score >= 50) return "warn";
   return "bad";
+}
+
+function mergeUnique(existing = [], incoming = []) {
+  const seen = new Set();
+  return [...incoming, ...existing].map((item) => String(item || "").trim()).filter((item) => item && !seen.has(item) && seen.add(item));
+}
+
+function mergeEvents(existing = [], incoming = []) {
+  const seen = new Set();
+  return [...incoming, ...existing].map((event) => ({
+    type: String(event?.type || "Evento").trim(),
+    date: String(event?.date || "").trim(),
+    note: String(event?.note || "").trim(),
+  })).filter((event) => {
+    const key = `${event.type}|${event.date}|${event.note}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return event.type || event.date || event.note;
+  });
+}
+
+function renderFundamentals(fundamentals) {
+  const entries = Array.isArray(fundamentals) ? fundamentals.map((item) => [item.label, item.value]) : Object.entries(fundamentals || {});
+  return entries.length
+    ? `<dl class="metric-list">${entries.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`
+    : "<p>Sin fundamentales guardados.</p>";
 }
 
 function logoText(ticker = "") {
@@ -222,7 +258,7 @@ function ensureTicker(ticker) {
 function renderWatchlist() {
   const assets = portfolioAssets();
   const withPrices = assets.filter((asset) => Number.isFinite(asset.price)).length;
-  const withReports = assets.filter((asset) => state.reportsByTicker[asset.ticker]).length;
+  const withReports = assets.filter((asset) => latestReport(asset.ticker)).length;
   document.querySelector("#screen-watchlist").innerHTML = `
     <p class="muted tiny">Datos reales primero. Actualizacion: ${formatTimestamp(state.lastDataRefresh)}.</p>
     <article class="panel">
@@ -251,7 +287,7 @@ function renderWatchlist() {
 }
 
 function assetRow(asset) {
-  const report = state.reportsByTicker[asset.ticker];
+  const report = latestReport(asset.ticker);
   return `
     <article class="asset-row asset-row-action">
       <button class="asset-main" type="button" data-open-ticker="${asset.ticker}" data-route="detail">
@@ -273,7 +309,7 @@ function assetRow(asset) {
 function renderDetail() {
   const asset = assetByTicker();
   if (!asset) return renderNoAsset("detail");
-  const report = state.reportsByTicker[asset.ticker];
+  const report = latestReport(asset.ticker);
   const quoteStatus = state.quoteStatusByTicker[asset.ticker];
   document.querySelector("#screen-detail").innerHTML = `
     <article class="asset-hero">
@@ -290,8 +326,9 @@ function renderDetail() {
     <div class="quick-actions compact-actions">
       <button type="button" data-edit-asset="${asset.ticker}">${icon("edit")}<span>Editar datos</span></button>
       <button type="button" data-route="thesis">${icon("doc")}<span>Tesis</span></button>
-      <button type="button" data-generate-report="${asset.ticker}">${icon("refresh")}<span>Informe IA</span></button>
+      <button type="button" data-generate-report-web="${asset.ticker}">${icon("refresh")}<span>Analizar</span></button>
       <button type="button" data-refresh-one="${asset.ticker}">${icon("refresh")}<span>Precio</span></button>
+      <button type="button" data-route="history">${icon("doc")}<span>Historico</span></button>
     </div>
     <article class="panel">
       <h2>Posicion</h2>
@@ -310,6 +347,10 @@ function renderDetail() {
       </dl>
     </article>
     <article class="panel">
+      <h2>Fundamentales</h2>
+      ${renderFundamentals(asset.fundamentals)}
+    </article>
+    <article class="panel">
       <h2>Historico real</h2>
       <p>No se muestra grafico hasta que exista una serie historica real guardada. Siguiente paso: guardar precios diarios en Supabase.</p>
     </article>
@@ -319,16 +360,20 @@ function renderDetail() {
 function renderReport() {
   const asset = assetByTicker();
   if (!asset) return renderNoAsset("report");
-  const report = state.reportsByTicker[asset.ticker];
+  const history = reportHistory(asset.ticker);
+  const report = latestReport(asset.ticker);
   const searchResults = state.search.lastResultsByTicker?.[asset.ticker]?.results || [];
   document.querySelector("#screen-report").innerHTML = `
     <article class="panel">
       <h2>${escapeHtml(asset.ticker)} - Informe IA</h2>
-      <p>${report ? `Generado: ${escapeHtml(formatTimestamp(report.createdAt))}. Modelo: ${escapeHtml(report.model || "No indicado")}.` : "Aun no hay informe real. Introduce tu API key en Ajustes y genera uno bajo demanda."}</p>
-      <button class="wide-button" type="button" data-generate-report="${asset.ticker}">Generar sin web search</button>
-      <button class="wide-button ghost" type="button" data-generate-report-web="${asset.ticker}">Buscar con Brave + analizar</button>
+      <p>${report ? `Ultimo: ${escapeHtml(formatTimestamp(report.createdAt))}. Modelo: ${escapeHtml(report.model || "No indicado")}.` : "Aun no hay informe real. Analizar usara Brave, OpenAI y datos disponibles."}</p>
+      <button class="wide-button" type="button" data-generate-report-web="${asset.ticker}">Analizar ticker</button>
     </article>
-    ${report ? `<article class="panel report-output"><h2>Resultado</h2>${renderReportBody(report)}</article>` : `<article class="panel empty-state"><h2>Sin puntuacion</h2><p>No calculo scores simulados. El score aparecera solo si lo devuelve el informe de OpenAI.</p></article>`}
+    ${report ? `<article class="panel report-output"><h2>Resultado</h2>${renderReportBody(report)}</article>` : `<article class="panel empty-state"><h2>Sin informe</h2><p>El informe aparecera solo cuando lo genere la API con datos reales y fuentes.</p></article>`}
+    <article class="panel source-list">
+      <h2>Informes guardados</h2>
+      ${history.length ? history.map((item) => `<p><strong>${escapeHtml(formatTimestamp(item.createdAt))} - ${Number.isFinite(item.score) ? `${item.score}/100` : "Sin score"}</strong><span>${escapeHtml(item.model || "")}</span>${escapeHtml(item.thesisStatus || item.summary || "Informe guardado")}</p>`).join("") : "<p>No hay historial guardado.</p>"}
+    </article>
     <article class="panel source-list">
       <h2>Fuentes Brave</h2>
       ${
@@ -362,7 +407,7 @@ function renderThesis() {
     </article>
     <div class="quick-actions compact-actions">
       <button type="button" data-edit-asset="${asset.ticker}">${icon("edit")}<span>Editar tesis</span></button>
-      <button type="button" data-generate-report="${asset.ticker}">${icon("refresh")}<span>Informe IA</span></button>
+      <button type="button" data-generate-report-web="${asset.ticker}">${icon("refresh")}<span>Analizar</span></button>
     </div>
     <article class="panel"><h2>Tesis</h2><p>${escapeHtml(asset.thesis || "Pendiente de redactar.")}</p></article>
     <article class="panel checklist"><h2>Drivers</h2>${listItems(asset.drivers, "ok-dot", "Sin drivers definidos.")}</article>
@@ -383,7 +428,19 @@ function eventItems(events) {
 }
 
 function renderHistory() {
-  document.querySelector("#screen-history").innerHTML = `<article class="panel"><h2>Historico real</h2><p>No hay graficos simulados. Cuando conectemos Supabase para guardar precios diarios y revisiones, aqui se mostrara la serie real.</p></article>`;
+  const asset = assetByTicker();
+  if (!asset) return renderNoAsset("history");
+  const history = reportHistory(asset.ticker);
+  document.querySelector("#screen-history").innerHTML = `
+    <article class="panel">
+      <h2>Historico de tesis</h2>
+      <p>${history.length ? `${history.length} informes reales guardados para ${escapeHtml(asset.ticker)}.` : "Aun no hay informes guardados para este activo."}</p>
+      <button class="wide-button" type="button" data-generate-report-web="${asset.ticker}">Analizar ahora</button>
+    </article>
+    <div class="calendar-list">
+      ${history.length ? history.map((report) => `<button class="calendar-row" type="button" data-route="report"><span class="calendar-date">${escapeHtml(formatTimestamp(report.createdAt))}</span><span><h3>${Number.isFinite(report.score) ? `${report.score}/100` : "Sin score"}</h3><p>${escapeHtml(report.thesisStatus || report.summary || "Informe guardado")}</p></span></button>`).join("") : `<article class="panel empty-state"><h2>Sin serie</h2><p>Analiza el ticker varias veces para construir la evolucion real de la tesis.</p></article>`}
+    </div>
+  `;
 }
 
 function renderCalendar() {
@@ -402,15 +459,17 @@ function renderSearch() {
   document.querySelector("#screen-add").innerHTML = `
     <label class="search-box">${icon("plus")}<input id="tickerInput" type="search" placeholder="Ticker real, ej. AAPL, ASML.AS, 0700.HK" /></label>
     <button class="wide-button" type="button" data-create-from-input>Anadir ticker</button>
-    <article class="panel"><h2>Sin catalogo inventado</h2><p>Introduce el ticker real. Despues podras actualizar precio, tesis, posicion y generar informe IA.</p></article>
+    <button class="wide-button ghost" type="button" data-create-and-analyze>Rellenar con IA</button>
+    <article class="panel"><h2>Alta de activo</h2><p>Introduce el ticker real. Puedes anadirlo vacio o pedir a la IA que rellene empresa, sector, eventos, precio/fundamentales disponibles e informe inicial.</p></article>
   `;
 }
 
 function renderDiscovery() {
   document.querySelector("#screen-discovery").innerHTML = `
-    <article class="panel"><h2>Thesis Discovery</h2><p>Desactivado hasta que usemos OpenAI con datos reales. No se generaran sugerencias heuristicas inventadas.</p></article>
-    <article class="step-card"><span>1</span><label>Idea de inversion</label><textarea id="discoveryPrompt" placeholder="Describe una tesis para que la API proponga tickers cuando activemos esta funcion."></textarea></article>
-    <button class="wide-button" type="button" data-discovery-ai>Preparado para IA</button>
+    <article class="panel"><h2>Thesis Discovery</h2><p>Describe una tesis y la IA buscara candidatos usando Brave. No se muestran sugerencias si no hay respuesta real de la API.</p></article>
+    <article class="step-card"><span>1</span><label>Idea de inversion</label><textarea id="discoveryPrompt" placeholder="Ej. Empresas europeas con moat en semiconductores, baja deuda y crecimiento estructural."></textarea></article>
+    <button class="wide-button" type="button" data-discovery-ai>Buscar activos</button>
+    <div id="discoveryResults"></div>
   `;
 }
 
@@ -420,8 +479,7 @@ function renderSettings() {
     <article class="panel">
       <h2>Supabase</h2>
       <p>${hasIntegratedSupabase ? "Supabase viene integrado en la app. Solo conserva la misma Sync key entre movil y PC." : "Falta integrar Supabase en APP_CONFIG. Mientras tanto puedes pegar Project URL y anon key aqui."}</p>
-      <label class="form-field">Project URL<input name="supabaseUrl" value="${escapeHtml(state.sync.supabaseUrl)}" placeholder="https://xxxx.supabase.co" ${hasIntegratedSupabase ? "readonly" : ""} /></label>
-      <label class="form-field">Anon public key<input name="supabaseAnonKey" value="${escapeHtml(hasIntegratedSupabase ? maskKey(state.sync.supabaseAnonKey) : state.sync.supabaseAnonKey)}" placeholder="eyJ..." ${hasIntegratedSupabase ? "readonly" : ""} /></label>
+      ${hasIntegratedSupabase ? "" : `<label class="form-field">Project URL<input name="supabaseUrl" value="${escapeHtml(state.sync.supabaseUrl)}" placeholder="https://xxxx.supabase.co" /></label><label class="form-field">Anon public key<input name="supabaseAnonKey" value="${escapeHtml(state.sync.supabaseAnonKey)}" placeholder="eyJ..." /></label>`}
       <label class="form-field">Sync key<input name="syncKey" value="${escapeHtml(state.sync.syncKey)}" /></label>
       <div class="button-grid"><button class="wide-button ghost" type="button" data-save-settings>Guardar</button><button class="wide-button ghost" type="button" data-sync-pull>Descargar</button></div>
       <button class="wide-button ghost" type="button" data-sync-push>Subir estado</button>
@@ -616,37 +674,65 @@ async function generateReport(ticker, includeWeb = false) {
     showToast("Configura Supabase");
     return;
   }
-  showToast("Generando informe...");
+  showToast("Analizando ticker...");
   try {
-    if (includeWeb) resetSearchUsageIfNeeded();
-    if (includeWeb && Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
+    resetSearchUsageIfNeeded();
+    if (Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
       throw new Error("Limite mensual de Brave alcanzado");
     }
-    const data = await invokeAnalyzeThesis(asset, includeWeb);
+    const quoteResult = await fetchMarketQuote(asset);
+    if (quoteResult.quote) {
+      const quote = quoteResult.quote;
+      state.assetsByTicker[ticker] = { ...state.assetsByTicker[ticker], price: quote.price, changePercent: quote.changePercent, currency: quote.currency || state.assetsByTicker[ticker].currency, updatedAt: new Date().toISOString() };
+      state.quoteStatusByTicker[ticker] = { ok: true, source: quote.source, at: new Date().toISOString(), message: "Precio real actualizado antes del analisis" };
+    }
+    const data = await invokeAnalyzeThesis(state.assetsByTicker[ticker], true);
     const report = data.report || {};
     const raw = typeof report.raw === "string" ? report.raw : JSON.stringify(report, null, 2);
     const sources = Array.isArray(data.sources) ? data.sources : [];
-    state.reportsByTicker[ticker] = { ...report, raw, model: data.model || state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: includeWeb, sourceCount: sources.length };
-    if (includeWeb) {
-      state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
-      state.search.lastResultsByTicker[ticker] = {
-        at: new Date().toISOString(),
-        query: data.query || buildBraveQuery(asset),
-        results: sources,
-      };
-      state.search.lastError = "";
-    }
+    const savedReport = { ...report, raw, model: data.model || state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: true, sourceCount: sources.length };
+    applyAssetPatch(ticker, data.assetPatch || {});
+    state.reportsByTicker[ticker] = savedReport;
+    state.reportHistoryByTicker[ticker] = [savedReport, ...reportHistory(ticker)].slice(0, 50);
+    state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
+    state.search.lastResultsByTicker[ticker] = {
+      at: new Date().toISOString(),
+      query: data.query || buildBraveQuery(asset),
+      results: sources,
+    };
+    state.search.lastError = "";
     state.ai.lastError = "";
     saveState();
     setRoute("report");
     showToast("Informe generado");
   } catch (error) {
-    if (includeWeb) state.search.lastError = error.message;
+    state.search.lastError = error.message;
     state.ai.lastError = error.message;
     saveState();
     setRoute("settings");
     showToast("Error OpenAI");
   }
+}
+
+function applyAssetPatch(ticker, patch = {}) {
+  const asset = state.assetsByTicker[ticker];
+  if (!asset) return;
+  const fundamentals = Array.isArray(patch.fundamentals) && patch.fundamentals.length ? patch.fundamentals : asset.fundamentals || [];
+  state.assetsByTicker[ticker] = {
+    ...asset,
+    company: patch.company || asset.company,
+    sector: patch.sector || asset.sector,
+    currency: patch.currency || asset.currency,
+    price: Number.isFinite(Number(patch.price)) ? Number(patch.price) : asset.price,
+    changePercent: Number.isFinite(Number(patch.changePercent)) ? Number(patch.changePercent) : asset.changePercent,
+    thesis: patch.thesis || asset.thesis,
+    drivers: mergeUnique(asset.drivers, patch.drivers || []),
+    breakers: mergeUnique(asset.breakers, patch.breakers || []),
+    risks: mergeUnique(asset.risks, patch.risks || []),
+    events: mergeEvents(asset.events, patch.events || []),
+    fundamentals,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 async function invokeAnalyzeThesis(asset, includeWeb) {
@@ -669,6 +755,46 @@ async function invokeAnalyzeThesis(asset, includeWeb) {
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data?.error || data?.message || `Supabase Function HTTP ${response.status}`);
   return data;
+}
+
+async function discoverAssets() {
+  const prompt = document.querySelector("#discoveryPrompt")?.value.trim();
+  if (!prompt) return showToast("Describe una tesis");
+  if (!hasSupabaseConfig()) return showToast("Configura Supabase");
+  showToast("Buscando activos...");
+  try {
+    resetSearchUsageIfNeeded();
+    if (Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) throw new Error("Limite mensual de Brave alcanzado");
+    const response = await fetch(`${supabaseUrl()}/functions/v1/analyze-thesis`, {
+      method: "POST",
+      headers: supabaseHeaders(),
+      body: JSON.stringify({
+        mode: "discovery",
+        thesis: prompt,
+        model: state.ai.model,
+        search: { country: state.search.country || "US", language: state.search.language || "en", count: 8 },
+      }),
+    });
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!response.ok) throw new Error(data?.error || `Supabase Function HTTP ${response.status}`);
+    state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
+    renderDiscoveryResults(data.suggestions || []);
+    saveState();
+    showToast("Discovery listo");
+  } catch (error) {
+    state.ai.lastError = error.message;
+    saveState();
+    showToast("Error Discovery");
+  }
+}
+
+function renderDiscoveryResults(suggestions) {
+  const box = document.querySelector("#discoveryResults");
+  if (!box) return;
+  box.innerHTML = suggestions.length
+    ? suggestions.map((item) => `<article class="asset-row"><button class="asset-main" type="button" data-add-suggestion="${escapeHtml(item.ticker || "")}" data-company="${escapeHtml(item.company || "")}" data-sector="${escapeHtml(item.sector || "")}" data-thesis="${escapeHtml(item.rationale || "")}"><span class="logo-mark">${logoText(item.ticker || "")}</span><span><h3>${escapeHtml(item.ticker || "")}</h3><p>${escapeHtml(item.company || "")}<br>${escapeHtml(item.rationale || "")}</p></span><span class="asset-price"><strong>${escapeHtml(String(item.score || ""))}</strong><p>score</p></span></button></article>`).join("")
+    : `<article class="panel empty-state"><h2>Sin resultados</h2><p>La API no devolvio candidatos utilizables.</p></article>`;
 }
 
 function resetSearchUsageIfNeeded() {
@@ -874,6 +1000,26 @@ document.addEventListener("click", (event) => {
     }
     return;
   }
+  if (event.target.closest("[data-create-and-analyze]")) {
+    const created = ensureTicker(document.querySelector("#tickerInput")?.value || "");
+    if (created) return generateReport(created, true);
+    return;
+  }
+  const suggestion = event.target.closest("[data-add-suggestion]");
+  if (suggestion) {
+    const ticker = ensureTicker(suggestion.dataset.addSuggestion || "");
+    if (ticker) {
+      state.assetsByTicker[ticker] = {
+        ...state.assetsByTicker[ticker],
+        company: suggestion.dataset.company || state.assetsByTicker[ticker].company,
+        sector: suggestion.dataset.sector || state.assetsByTicker[ticker].sector,
+        thesis: suggestion.dataset.thesis || state.assetsByTicker[ticker].thesis,
+      };
+      saveState();
+      setRoute("detail");
+    }
+    return;
+  }
   const openTicker = event.target.closest("[data-open-ticker]");
   if (openTicker) {
     state.selectedTicker = openTicker.dataset.openTicker;
@@ -888,8 +1034,6 @@ document.addEventListener("click", (event) => {
   const refreshOne = event.target.closest("[data-refresh-one]");
   if (refreshOne) return refreshMarketData(refreshOne.dataset.refreshOne);
   if (event.target.closest("[data-refresh-market]")) return refreshMarketData();
-  const reportButton = event.target.closest("[data-generate-report]");
-  if (reportButton) return generateReport(reportButton.dataset.generateReport);
   const reportWebButton = event.target.closest("[data-generate-report-web]");
   if (reportWebButton) return generateReport(reportWebButton.dataset.generateReportWeb, true);
   if (event.target.closest("[data-save-settings]")) return saveSettingsFromScreen();
@@ -904,7 +1048,7 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-export-state]")) return exportState();
   if (event.target.closest("[data-import-state]")) return importState();
   if (event.target.closest("[data-reset-state]")) return resetState();
-  if (event.target.closest("[data-discovery-ai]")) return showToast("Siguiente paso: conectar discovery con OpenAI");
+  if (event.target.closest("[data-discovery-ai]")) return discoverAssets();
 });
 
 backButton.addEventListener("click", () => {
