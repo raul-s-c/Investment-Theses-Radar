@@ -4,263 +4,45 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#03141c" />
-    <meta name="description" content="Thesis Radar monitoriza portfolio, tesis de inversion y eventos clave sin busquedas web por defecto." />
+    <meta name="description" content="Thesis Radar monitoriza portfolio, sincroniza datos y genera informes de inversion bajo demanda." />
     <title>Thesis Radar</title>
-    <link rel="manifest" href="./manifest.webmanifest?v=5" />
-    <link rel="stylesheet" href="./styles.css?v=5" />
+    <link rel="manifest" href="./manifest.webmanifest?v=6" />
+    <link rel="stylesheet" href="./styles.css?v=6" />
   </head>
   <body>
     <main class="device" aria-label="Thesis Radar">
       <section class="phone">
-        <div class="status-bar" aria-hidden="true">
-          <span>9:41</span>
-          <span class="status-icons">5G 100%</span>
-        </div>
-
         <header class="app-topbar">
           <button class="icon-button" id="backButton" type="button" aria-label="Volver" title="Volver">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 19 8 12l7-7" /></svg>
           </button>
           <div>
-            <h1 id="screenTitle">Investment Radar</h1>
-            <p id="screenSubtitle">18 de agosto de 2026</p>
+            <h1 id="screenTitle">Thesis Radar</h1>
+            <p id="screenSubtitle">Datos reales</p>
           </div>
           <button class="icon-button" id="topAction" type="button" aria-label="Accion principal" title="Accion principal">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"></svg>
           </button>
         </header>
 
-        <section class="screen is-active" id="screen-watchlist" data-title="Investment Radar" data-subtitle="Ultima actualizacion: manual" data-action="bell">
-          <div class="muted small">18 de agosto de 2026</div>
-          <p class="muted tiny">Revision manual preparada. Sin web search.</p>
-
-          <article class="panel">
-            <h2>Resumen del dia</h2>
-            <div class="day-summary">
-              <div><strong class="good">2</strong><span>tesis fuerte</span></div>
-              <div><strong class="good">1</strong><span>estable</span></div>
-              <div><strong class="warn">0</strong><span>vigilar</span></div>
-              <div><strong class="bad">0</strong><span>rota</span></div>
-            </div>
-          </article>
-
-          <div class="quick-actions" aria-label="Accesos rapidos">
-            <button data-route="history" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
-              <span>Historico de scores</span>
-            </button>
-            <button data-route="discovery" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" /><path d="m7.8 7.8 2.1 2.1" /><path d="m14.1 14.1 2.1 2.1" /><path d="m16.2 7.8-2.1 2.1" /><path d="m9.9 14.1-2.1 2.1" /></svg>
-              <span>Thesis Discovery</span>
-            </button>
-          </div>
-
-          <div class="section-row">
-            <h2>Mi Watchlist</h2>
-            <button class="link-button" data-route="add" type="button">Editar</button>
-          </div>
-          <div class="asset-list" id="watchlistRows"></div>
-          <button class="wide-button ghost" data-route="add" type="button">+ Anadir ticker</button>
-        </section>
-
-        <section class="screen" id="screen-detail" data-title="0388.HK" data-subtitle="Hong Kong Exchanges & Clearing" data-action="star">
-          <article class="asset-hero">
-            <div class="logo-mark">HKEX</div>
-            <div>
-              <h2>0388.HK</h2>
-              <p>Hong Kong Exchanges & Clearing</p>
-            </div>
-          </article>
-          <div class="price-row">
-            <div>
-              <strong>HK$392.40</strong>
-              <span class="good">+1.2% hoy</span>
-            </div>
-            <button class="signal-button good-bg" type="button">Tesis fuerte</button>
-          </div>
-          <nav class="tabs" aria-label="Detalle de activo">
-            <button class="is-selected" type="button">Resumen</button>
-            <button type="button">Analisis</button>
-            <button type="button">Noticias</button>
-            <button type="button">Finanzas</button>
-          </nav>
-          <div class="quick-actions compact-actions" aria-label="Accesos del activo">
-            <button data-route="history" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
-              <span>Historico</span>
-            </button>
-            <button data-route="thesis" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v10l8 4 8-4V7z" /><path d="M12 7v14" /></svg>
-              <span>Ver tesis</span>
-            </button>
-          </div>
-          <article class="panel">
-            <h2>Grafico de precio</h2>
-            <div class="range-tabs"><span>1D</span><span>1S</span><span class="is-on">1M</span><span>3M</span><span>1A</span><span>5A</span></div>
-            <svg class="line-chart" viewBox="0 0 320 150" role="img" aria-label="Grafico de precio de 0388.HK">
-              <path class="gridline" d="M0 35h320M0 75h320M0 115h320" />
-              <polyline points="0,120 28,104 45,86 68,97 90,70 112,80 136,62 158,50 178,36 198,60 218,28 238,54 260,49 282,65 305,45 320,38" />
-            </svg>
-          </article>
-          <article class="panel">
-            <h2>Niveles clave</h2>
-            <dl class="metric-list">
-              <div><dt>Precio de compra</dt><dd>&lt; HK$400.00</dd></div>
-              <div><dt>Compra fuerte</dt><dd>&lt; HK$360.00</dd></div>
-              <div><dt>Maximo 52 semanas</dt><dd>HK$469.00</dd></div>
-              <div><dt>Minimo 52 semanas</dt><dd>HK$275.00</dd></div>
-            </dl>
-          </article>
-        </section>
-
-        <section class="screen" id="screen-report" data-title="Informe Diario" data-subtitle="Analisis del dia" data-action="share">
-          <article class="panel report-card">
-            <div>
-              <h2>0388.HK - HKEX</h2>
-              <p>Score <strong>78</strong>/100</p>
-              <span class="good">Ayer: 76/100 +2</span>
-            </div>
-            <button class="signal-button good-bg" type="button">Estable</button>
-          </article>
-          <article class="panel">
-            <h2>Resumen ejecutivo</h2>
-            <p>La tesis se mantiene solida. Los datos recientes refuerzan volumen, posicion competitiva y disciplina de capital. La valoracion sigue razonable.</p>
-            <div class="score-bars">
-              <div><span>Tesis</span><meter min="0" max="100" value="91"></meter><strong>91/100</strong></div>
-              <div><span>Fundamentales</span><meter min="0" max="100" value="86"></meter><strong>86/100</strong></div>
-              <div><span>Valoracion</span><meter min="0" max="100" value="68"></meter><strong>68/100</strong></div>
-              <div><span>Noticias</span><meter min="0" max="100" value="82"></meter><strong>82/100</strong></div>
-              <div><span>Tecnico</span><meter min="0" max="100" value="57"></meter><strong>57/100</strong></div>
-            </div>
-          </article>
-          <article class="panel">
-            <h2>Revision manual</h2>
-            <p id="manualReviewText">Pulsa revisar para validar la tesis con los datos locales disponibles. No se haran busquedas web.</p>
-            <button class="wide-button" id="manualReviewButton" type="button">Revisar tesis ahora</button>
-          </article>
-        </section>
-
-        <section class="screen" id="screen-thesis" data-title="Tesis de Inversion" data-subtitle="Drivers y riesgos" data-action="none">
-          <article class="asset-hero">
-            <div class="logo-mark">HKEX</div>
-            <div>
-              <h2>0388.HK</h2>
-              <p>Hong Kong Exchanges & Clearing</p>
-            </div>
-          </article>
-          <article class="panel">
-            <h2>Resumen de la tesis</h2>
-            <p>China continua aumentando su peso economico y financiero global. Hong Kong mantiene su papel como mercado de capital entre China y los mercados internacionales.</p>
-          </article>
-          <article class="panel checklist">
-            <h2>Drivers positivos</h2>
-            <p><span class="ok-dot"></span>Actividad de IPOs en China y Hong Kong</p>
-            <p><span class="ok-dot"></span>Volumenes de Stock Connect en aumento</p>
-            <p><span class="ok-dot"></span>Inversion hacia China Southbound</p>
-            <p><span class="ok-dot"></span>Crecimiento de derivados y productos</p>
-          </article>
-          <article class="panel checklist">
-            <h2>Thesis breakers</h2>
-            <p><span class="bad-dot"></span>Hong Kong pierde relevancia frente a Shanghai/Shenzhen</p>
-            <p><span class="bad-dot"></span>Restricciones relevantes al capital extranjero</p>
-            <p><span class="bad-dot"></span>Caida estructural en volumenes de negociacion</p>
-          </article>
-          <article class="panel checklist">
-            <h2>Eventos que alimentan la tesis</h2>
-            <p><span class="warn-dot"></span>Resultados semestrales: margen y volumen</p>
-            <p><span class="warn-dot"></span>Dividendo: senal de retorno al accionista</p>
-          </article>
-        </section>
-
-        <section class="screen" id="screen-history" data-title="Historico" data-subtitle="0388.HK - HKEX" data-action="none">
-          <div class="range-tabs large"><span class="is-on">1M</span><span>3M</span><span>6M</span><span>1A</span><span>Todo</span></div>
-          <article class="panel">
-            <h2>Score total</h2>
-            <svg class="line-chart tall" viewBox="0 0 320 180" role="img" aria-label="Historico de score total">
-              <path class="gridline" d="M0 35h320M0 75h320M0 115h320M0 155h320" />
-              <polyline points="0,130 28,122 48,105 74,112 100,92 126,80 150,100 170,120 192,98 216,83 238,70 258,77 284,60 306,68 320,55" />
-            </svg>
-          </article>
-          <article class="panel">
-            <h2>Desglose de scores</h2>
-            <svg class="line-chart tall multi" viewBox="0 0 320 180" role="img" aria-label="Historico desglosado de scores">
-              <path class="gridline" d="M0 35h320M0 75h320M0 115h320M0 155h320" />
-              <polyline class="green" points="0,80 40,74 80,70 120,65 160,68 200,55 240,50 280,45 320,48" />
-              <polyline class="cyan" points="0,100 40,102 80,96 120,88 160,94 200,86 240,82 280,80 320,76" />
-              <polyline class="yellow" points="0,130 40,122 80,125 120,116 160,110 200,115 240,105 280,100 320,94" />
-              <polyline class="purple" points="0,120 40,116 80,112 120,108 160,114 200,106 240,102 280,98 320,96" />
-            </svg>
-          </article>
-        </section>
-
-        <section class="screen" id="screen-add" data-title="Anadir ticker" data-subtitle="Buscar y anadir" data-action="none">
-          <label class="search-box">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" /></svg>
-            <input id="tickerSearch" type="search" placeholder="Buscar empresa o ticker" />
-          </label>
-          <h2 class="block-heading">Busquedas recientes</h2>
-          <div class="chips"><button>0700.HK</button><button>9988.HK</button><button>AAPL</button><button>MSFT</button></div>
-          <h2 class="block-heading">Resultados</h2>
-          <div class="asset-list compact" id="searchResults"></div>
-        </section>
-
-        <section class="screen" id="screen-discovery" data-title="Thesis Discovery" data-subtitle="De tesis a activos" data-action="none">
-          <article class="step-card">
-            <span>1</span>
-            <label>Describe tu tesis de inversion</label>
-            <textarea id="thesisInput">China y Vietnam seguiran creciendo en produccion y exportaciones, pero los margenes industriales seran bajos. Quiero invertir en empresas que capturan valor: finanzas, logistica, infraestructura y servicios relacionados con el capital.</textarea>
-            <small>196/500</small>
-          </article>
-          <article class="step-card">
-            <span>2</span>
-            <label>Enfoque preferido</label>
-            <select><option>Asia: China, Hong Kong, Singapur, Vietnam</option></select>
-          </article>
-          <article class="step-card">
-            <span>3</span>
-            <label>Generar sugerencias</label>
-            <button class="wide-button" id="discoveryButton" type="button">Generar</button>
-          </article>
-          <article class="panel">
-            <h2>Resultados sugeridos</h2>
-            <div id="discoveryResults"></div>
-          </article>
-        </section>
-
-        <section class="screen" id="screen-settings" data-title="Ajustes" data-subtitle="Siempre al dia" data-action="none">
-          <article class="panel">
-            <h2>Cuenta</h2>
-            <dl class="metric-list">
-              <div><dt>Sincronizacion en la nube</dt><dd class="good">Desactivada</dd></div>
-              <div><dt>Ultima sincronizacion</dt><dd>Local</dd></div>
-            </dl>
-          </article>
-          <article class="panel">
-            <h2>Datos</h2>
-            <dl class="metric-list">
-              <div><dt>Fuente financiera MVP</dt><dd>Local / Yahoo-ready</dd></div>
-              <div><dt>Revision automatica</dt><dd>Desactivada</dd></div>
-              <div><dt>Web search</dt><dd class="warn">Siempre manual</dd></div>
-            </dl>
-          </article>
-          <article class="panel">
-            <h2>IA</h2>
-            <dl class="metric-list">
-              <div><dt>Modelo previsto</dt><dd>gpt-5.4-mini</dd></div>
-              <div><dt>Modo por defecto</dt><dd>Sin busquedas</dd></div>
-              <div><dt>Revision</dt><dd>Bajo demanda</dd></div>
-            </dl>
-          </article>
-        </section>
+        <section class="screen is-active" id="screen-watchlist" data-title="Thesis Radar" data-subtitle="Portfolio" data-action="none"></section>
+        <section class="screen" id="screen-detail" data-title="Detalle" data-subtitle="Activo" data-action="none"></section>
+        <section class="screen" id="screen-report" data-title="Informe" data-subtitle="OpenAI bajo demanda" data-action="share"></section>
+        <section class="screen" id="screen-thesis" data-title="Tesis" data-subtitle="Drivers y riesgos" data-action="none"></section>
+        <section class="screen" id="screen-history" data-title="Historico" data-subtitle="Series reales" data-action="none"></section>
+        <section class="screen" id="screen-calendar" data-title="Calendario" data-subtitle="Eventos reales" data-action="none"></section>
+        <section class="screen" id="screen-add" data-title="Anadir ticker" data-subtitle="Ticker real" data-action="none"></section>
+        <section class="screen" id="screen-discovery" data-title="Discovery" data-subtitle="IA futura" data-action="none"></section>
+        <section class="screen" id="screen-settings" data-title="Ajustes" data-subtitle="Sync e IA" data-action="none"></section>
 
         <nav class="bottom-nav" aria-label="Navegacion principal">
-          <button class="is-active" data-route="watchlist" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10" /></svg><span>Watchlist</span></button>
+          <button class="is-active" data-route="watchlist" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10" /></svg><span>Portfolio</span></button>
           <button data-route="report" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10l3 3v15H7z" /><path d="M9 12h6M9 16h6M9 8h3" /></svg><span>Informes</span></button>
           <button data-route="thesis" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v10l8 4 8-4V7z" /><path d="M12 7v14" /></svg><span>Tesis</span></button>
           <button data-route="settings" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /><path d="M19.4 15a8 8 0 0 0 .1-6l2-1.5-2-3.5-2.4 1a8 8 0 0 0-5.2-3l-.4-2h-4l-.4 2a8 8 0 0 0-5.2 3l-2.4-1-2 3.5L4.5 9a8 8 0 0 0 .1 6l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 5.2 3l.4 2h4l.4-2a8 8 0 0 0 5.2-3l2.4 1 2-3.5Z" /></svg><span>Ajustes</span></button>
         </nav>
       </section>
     </main>
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=6"></script>
   </body>
 </html>

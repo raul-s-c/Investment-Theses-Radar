@@ -11,8 +11,10 @@ PWA mobile-first para monitorizar portfolio y validar tesis de inversion manualm
 - Sin web search por defecto.
 - Sin API financiera de pago.
 - Actualizacion manual de precios con fuentes gratuitas experimentales: Stooq CSV y Yahoo chart.
-- Fallback de simulacion local si el navegador bloquea la fuente externa.
-- Alta manual de tickers fuera del catalogo inicial.
+- Portfolio vacio por defecto: sin tickers, precios, graficos ni scores inventados.
+- Alta manual de tickers reales.
+- Informes con OpenAI bajo demanda usando la API key que pegues en Ajustes.
+- Sincronizacion opcional movil/PC con Supabase en modo solo.
 - Calendario alimentado por resultados, dividendos y catalizadores editables.
 
 ## Probar localmente
@@ -54,7 +56,20 @@ Esto evita APIs financieras de pago y evita llamadas directas desde el navegador
 
 ## Sincronizacion y cache comunitaria
 
-De momento no hace falta crear una base de datos. La app funciona con `localStorage`, pero el proyecto queda preparado para Supabase con el esquema de `supabase/schema.sql`.
+La app funciona con `localStorage`, pero ya permite sincronizar movil y PC con Supabase.
+
+Para probarlo ya:
+
+1. Crea un proyecto en Supabase.
+2. Abre SQL Editor.
+3. Ejecuta `supabase/solo_sync.sql`.
+4. En la app, ve a Ajustes y pega:
+   - Project URL
+   - anon public key
+   - deja el `Sync key` generado o usa el mismo en movil y PC.
+5. En un dispositivo pulsa `Subir estado`; en el otro pulsa `Descargar`.
+
+El esquema completo futuro esta en `supabase/schema.sql`.
 
 Objetivo futuro:
 
@@ -76,9 +91,12 @@ Cuando activemos Supabase, GitHub Pages no debe guardar claves privadas. Opcione
 - Mini API/proxy para operaciones privadas, llamadas a OpenAI y jobs de datos.
 - Service role solo en servidor o GitHub Actions, nunca en el navegador.
 
+Nota sobre el modo `solo_sync.sql`: es un puente temporal para uso personal. Usa anon key y una `sync_key` opaca; no debe ser la arquitectura final multiusuario.
+
 ## Politica de coste IA
 
 - `web search`: desactivado por defecto.
 - Revision automatica: fuera del MVP.
-- Revision manual: usa tesis, eventos y datos locales.
-- ChatGPT API: prevista para resumir y contrastar tesis, no para buscar en web salvo accion explicita del usuario.
+- Revision manual: usa tesis, eventos y datos reales disponibles.
+- ChatGPT API: puedes pegarla en Ajustes para pruebas. Se guarda solo en el navegador y no se sincroniza a Supabase.
+- La app llama a OpenAI sin web search y pide al modelo no inventar fundamentales, noticias, dividendos ni precios.
