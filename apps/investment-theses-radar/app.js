@@ -1,0 +1,637 @@
+const STORAGE_KEY = "thesis-radar-state-v2";
+
+const catalog = [
+  {
+    ticker: "0388.HK",
+    name: "HKEX",
+    company: "Hong Kong Exchanges & Clearing",
+    sector: "Bolsa / Infraestructura de mercado",
+    currency: "HK$",
+    price: 392.4,
+    change: 1.2,
+    score: 78,
+    previousScore: 76,
+    thesisScore: 91,
+    fundamentalsScore: 86,
+    valuationScore: 68,
+    newsScore: 82,
+    technicalScore: 57,
+    signal: "tesis fuerte",
+    thesis: "China continua aumentando su peso economico y financiero global. Hong Kong mantiene su papel como mercado de capital entre China y los mercados internacionales.",
+    drivers: ["Actividad de IPOs en China y Hong Kong", "Volumenes de Stock Connect en aumento", "Inversion hacia China Southbound", "Crecimiento de derivados y productos"],
+    breakers: ["Hong Kong pierde relevancia frente a Shanghai/Shenzhen", "Restricciones relevantes al capital extranjero", "Caida estructural en volumenes de negociacion"],
+    risks: ["Intervencion regulatoria/politica", "Tensiones geopoliticas", "Ciclos bajistas en mercados de capitales"],
+    keyLevels: [["Precio de compra", "< HK$400.00"], ["Compra fuerte", "< HK$360.00"], ["Maximo 52 semanas", "HK$469.00"], ["Minimo 52 semanas", "HK$275.00"]],
+    events: [["Resultados", "27 ago", "Volumen, margen y guidance"], ["Dividendo", "05 sep", "Pago estimado y payout"]],
+    history: [55, 58, 60, 63, 68, 72, 66, 61, 70, 73, 78, 76, 79, 84, 78],
+  },
+  {
+    ticker: "D05.SI",
+    name: "DBS Group",
+    company: "DBS Group Holdings",
+    sector: "Banca / Gestion de riqueza",
+    currency: "S$",
+    price: 75.6,
+    change: -0.3,
+    score: 71,
+    previousScore: 72,
+    thesisScore: 78,
+    fundamentalsScore: 84,
+    valuationScore: 62,
+    newsScore: 66,
+    technicalScore: 58,
+    signal: "estable",
+    thesis: "DBS mantiene una franquicia bancaria lider en Singapur y Asia, con buenos retornos sobre capital y exposicion a crecimiento patrimonial regional.",
+    drivers: ["ROE alto y estable", "Crecimiento de wealth management", "Balance solido", "Disciplina de costes"],
+    breakers: ["Deterioro fuerte del credito", "Caida sostenida de margen financiero", "Exceso de exposicion inmobiliaria problematica"],
+    risks: ["Tipos a la baja", "Riesgo crediticio regional", "Ciclo inmobiliario asiatico"],
+    keyLevels: [["Precio de compra", "< S$73.00"], ["Compra fuerte", "< S$68.00"], ["Maximo 52 semanas", "S$78.90"], ["Minimo 52 semanas", "S$54.20"]],
+    events: [["Resultados", "08 nov", "NIM, coste de riesgo y depositos"], ["Dividendo", "18 sep", "Dividendo trimestral esperado"]],
+    history: [62, 63, 65, 68, 69, 74, 72, 70, 71, 73, 72, 70, 71, 72, 71],
+  },
+  {
+    ticker: "M44U.SI",
+    name: "Mapletree Log. Trust",
+    company: "Mapletree Logistics Trust",
+    sector: "Logistica / Infraestructura",
+    currency: "S$",
+    price: 1.17,
+    change: 0.6,
+    score: 81,
+    previousScore: 80,
+    thesisScore: 87,
+    fundamentalsScore: 74,
+    valuationScore: 79,
+    newsScore: 75,
+    technicalScore: 69,
+    signal: "tesis fuerte",
+    thesis: "La demanda de activos logisticos en Asia sigue apoyada por comercio regional, e-commerce y cadenas de suministro mas resilientes.",
+    drivers: ["Portfolio diversificado", "Activos logisticos criticos", "Yield atractivo", "Sponsor de calidad"],
+    breakers: ["Recorte estructural de DPU", "Apalancamiento persistentemente alto", "Ocupacion por debajo de niveles objetivo"],
+    risks: ["Tipos de interes", "Refinanciacion", "Debilidad de alquileres logisticos"],
+    keyLevels: [["Precio de compra", "< S$1.20"], ["Compra fuerte", "< S$1.05"], ["Maximo 52 semanas", "S$1.62"], ["Minimo 52 semanas", "S$1.03"]],
+    events: [["Resultados", "24 oct", "Ocupacion, DPU y deuda"], ["Dividendo", "12 nov", "Distribucion trimestral"]],
+    history: [68, 69, 70, 72, 71, 74, 76, 75, 78, 80, 79, 81, 83, 80, 81],
+  },
+  {
+    ticker: "0700.HK",
+    name: "Tencent",
+    company: "Tencent Holdings",
+    sector: "Internet / Entretenimiento",
+    currency: "HK$",
+    price: 602.0,
+    change: 0.8,
+    score: 84,
+    previousScore: 83,
+    thesisScore: 88,
+    fundamentalsScore: 87,
+    valuationScore: 72,
+    newsScore: 80,
+    technicalScore: 73,
+    signal: "tesis fuerte",
+    thesis: "Tencent combina ecosistema social, gaming y pagos con monetizacion publicitaria y disciplina de recompras.",
+    drivers: ["Recompras", "Gaming internacional", "WeChat como infraestructura", "Margen publicitario"],
+    breakers: ["Nueva presion regulatoria severa", "Caida estructural de gaming", "Deterioro de monetizacion en WeChat"],
+    risks: ["Regulacion china", "Competencia en IA", "Ciclo publicitario"],
+    keyLevels: [["Precio de compra", "< HK$590"], ["Compra fuerte", "< HK$520"], ["Maximo 52 semanas", "HK$640"], ["Minimo 52 semanas", "HK$342"]],
+    events: [["Resultados", "13 nov", "Gaming, ads y recompras"]],
+    history: [70, 72, 74, 76, 78, 75, 79, 82, 81, 83, 84, 86, 83, 85, 84],
+  },
+  {
+    ticker: "9988.HK",
+    name: "Alibaba",
+    company: "Alibaba Group Holding",
+    sector: "E-commerce / Cloud",
+    currency: "HK$",
+    price: 141.6,
+    change: -0.4,
+    score: 81,
+    previousScore: 79,
+    thesisScore: 82,
+    fundamentalsScore: 79,
+    valuationScore: 86,
+    newsScore: 73,
+    technicalScore: 68,
+    signal: "estable",
+    thesis: "Alibaba ofrece valoracion contenida, opcion de recuperacion en consumo chino y potencial de cloud si mejora la ejecucion.",
+    drivers: ["Valoracion baja", "Cloud e IA", "Recompras", "Recuperacion de consumo"],
+    breakers: ["Perdida de cuota acelerada", "Cloud sin crecimiento rentable", "Nueva intervencion regulatoria"],
+    risks: ["Competencia domestica", "Macroeconomia china", "Gobernanza"],
+    keyLevels: [["Precio de compra", "< HK$135"], ["Compra fuerte", "< HK$115"], ["Maximo 52 semanas", "HK$162"], ["Minimo 52 semanas", "HK$68"]],
+    events: [["Resultados", "15 nov", "Cloud, take rate y recompras"]],
+    history: [58, 60, 64, 66, 70, 73, 74, 76, 78, 75, 77, 80, 79, 82, 81],
+  },
+  {
+    ticker: "600519.SS",
+    name: "Kweichow Moutai",
+    company: "Kweichow Moutai",
+    sector: "Consumo premium",
+    currency: "CNY ",
+    price: 1508.2,
+    change: 0.2,
+    score: 76,
+    previousScore: 76,
+    thesisScore: 80,
+    fundamentalsScore: 91,
+    valuationScore: 54,
+    newsScore: 69,
+    technicalScore: 60,
+    signal: "estable",
+    thesis: "Marca premium con poder de precios, retornos excepcionales y caja neta, aunque la valoracion exige crecimiento sostenido.",
+    drivers: ["Marca dominante", "Margen alto", "Caja neta", "Distribucion controlada"],
+    breakers: ["Deterioro de demanda premium", "Presion politica sobre precios", "Inventario excesivo en canal"],
+    risks: ["Consumo chino", "Valoracion", "Regulacion de lujo"],
+    keyLevels: [["Precio de compra", "< CNY 1450"], ["Compra fuerte", "< CNY 1300"], ["Maximo 52 semanas", "CNY 1888"], ["Minimo 52 semanas", "CNY 1240"]],
+    events: [["Resultados", "30 oct", "Crecimiento y canal"]],
+    history: [80, 81, 82, 79, 78, 77, 75, 74, 76, 77, 75, 76, 77, 76, 76],
+  },
+  {
+    ticker: "005930.KS",
+    name: "Samsung Electronics",
+    company: "Samsung Electronics",
+    sector: "Semiconductores / Hardware",
+    currency: "KRW ",
+    price: 87600,
+    change: 1.5,
+    score: 80,
+    previousScore: 78,
+    thesisScore: 81,
+    fundamentalsScore: 82,
+    valuationScore: 73,
+    newsScore: 78,
+    technicalScore: 76,
+    signal: "tesis fuerte",
+    thesis: "Samsung se beneficia del ciclo de memoria, IA en centros de datos y normalizacion de inventarios.",
+    drivers: ["Ciclo DRAM/NAND", "HBM e IA", "Balance solido", "Escala de fabricacion"],
+    breakers: ["Perdida sostenida en HBM", "Caida de precios de memoria", "Capex improductivo"],
+    risks: ["Ciclo semiconductor", "Competencia TSMC/SK Hynix", "Geopolitica"],
+    keyLevels: [["Precio de compra", "< KRW 85000"], ["Compra fuerte", "< KRW 76000"], ["Maximo 52 semanas", "KRW 93000"], ["Minimo 52 semanas", "KRW 65000"]],
+    events: [["Resultados", "31 oct", "Memoria, HBM y capex"]],
+    history: [61, 64, 67, 69, 72, 75, 78, 77, 79, 82, 80, 78, 79, 81, 80],
+  },
+  {
+    ticker: "ASML.AS",
+    name: "ASML",
+    company: "ASML Holding",
+    sector: "Semiconductores / Equipos",
+    currency: "EUR ",
+    price: 731.5,
+    change: -0.7,
+    score: 79,
+    previousScore: 80,
+    thesisScore: 86,
+    fundamentalsScore: 88,
+    valuationScore: 57,
+    newsScore: 70,
+    technicalScore: 62,
+    signal: "estable",
+    thesis: "ASML conserva una posicion casi monopolistica en litografia avanzada, clave para nodos punteros de semiconductores.",
+    drivers: ["Monopolio EUV", "Backlog profundo", "Demanda IA", "Pricing power"],
+    breakers: ["Restricciones exportacion mucho mas duras", "Retraso estructural High-NA", "Cancelacion de capex de clientes clave"],
+    risks: ["China export controls", "Ciclo de capex", "Valoracion exigente"],
+    keyLevels: [["Precio de compra", "< EUR 720"], ["Compra fuerte", "< EUR 640"], ["Maximo 52 semanas", "EUR 1021"], ["Minimo 52 semanas", "EUR 580"]],
+    events: [["Resultados", "16 oct", "Pedidos y guidance"]],
+    history: [72, 74, 78, 80, 83, 82, 81, 79, 80, 78, 77, 79, 81, 80, 79],
+  },
+];
+
+const routes = ["watchlist", "detail", "report", "thesis", "history", "add", "discovery", "settings"];
+const routeHistory = ["watchlist"];
+const screenTitle = document.querySelector("#screenTitle");
+const screenSubtitle = document.querySelector("#screenSubtitle");
+const backButton = document.querySelector("#backButton");
+const topAction = document.querySelector("#topAction");
+const watchlistRows = document.querySelector("#watchlistRows");
+const searchResults = document.querySelector("#searchResults");
+const discoveryResults = document.querySelector("#discoveryResults");
+const tickerSearch = document.querySelector("#tickerSearch");
+
+let state = loadState();
+
+function loadState() {
+  const fallback = {
+    portfolio: ["0388.HK", "D05.SI", "M44U.SI"],
+    selectedTicker: "0388.HK",
+    lastReviewByTicker: {},
+  };
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem(STORAGE_KEY)) };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function assetByTicker(ticker = state.selectedTicker) {
+  return catalog.find((asset) => asset.ticker === ticker) || catalog[0];
+}
+
+function portfolioAssets() {
+  return state.portfolio.map((ticker) => assetByTicker(ticker)).filter(Boolean);
+}
+
+function formatPrice(asset) {
+  return `${asset.currency}${asset.price.toLocaleString("es-ES", { maximumFractionDigits: asset.price > 100 ? 1 : 2 })}`;
+}
+
+function toneForScore(score) {
+  if (score >= 78) return "good";
+  if (score >= 63) return "warn";
+  return "bad";
+}
+
+function signalForScore(score) {
+  if (score >= 80) return "tesis fuerte";
+  if (score >= 68) return "estable";
+  if (score >= 55) return "vigilar";
+  return "tesis rota";
+}
+
+function logoText(ticker) {
+  if (ticker.includes("0388")) return "HKEX";
+  if (ticker.includes("D05")) return "DBS";
+  if (ticker.includes("M44")) return "MLT";
+  return ticker.split(".")[0].slice(0, 4);
+}
+
+function actionIcon(kind) {
+  const icons = {
+    bell: '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />',
+    star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z" />',
+    share: '<path d="M4 12v8h16v-8" /><path d="M12 16V3" /><path d="m8 7 4-4 4 4" />',
+    none: "",
+  };
+  return icons[kind] || icons.none;
+}
+
+function assetRow(asset, mode = "portfolio") {
+  const tone = toneForScore(asset.score);
+  const signalClass = tone === "good" ? "good-bg" : tone === "warn" ? "warn-bg" : "bad-bg";
+  const inPortfolio = state.portfolio.includes(asset.ticker);
+
+  if (mode === "search") {
+    return `
+      <article class="asset-row">
+        <div>
+          <h3>${asset.ticker}</h3>
+          <p>${asset.company}</p>
+        </div>
+        <button class="add-mini" type="button" data-add-ticker="${asset.ticker}" aria-label="${inPortfolio ? "Ya anadido" : "Anadir"} ${asset.ticker}">${inPortfolio ? "✓" : "+"}</button>
+      </article>
+    `;
+  }
+
+  return `
+    <button class="asset-row" type="button" data-open-ticker="${asset.ticker}" data-route="detail">
+      <span class="logo-mark">${logoText(asset.ticker)}</span>
+      <span>
+        <h3>${asset.ticker}</h3>
+        <p>${asset.name}<br><span class="${tone}">Score ${asset.score}/100</span></p>
+      </span>
+      <span class="asset-price">
+        <strong>${formatPrice(asset)}</strong>
+        <span class="${signalClass}">${signalForScore(asset.score)}</span>
+        <p class="${asset.change >= 0 ? "good" : "bad"}">${asset.change >= 0 ? "+" : ""}${asset.change}%</p>
+      </span>
+    </button>
+  `;
+}
+
+function renderWatchlist() {
+  const assets = portfolioAssets();
+  const counts = assets.reduce(
+    (acc, asset) => {
+      const signal = signalForScore(asset.score);
+      if (signal === "tesis fuerte") acc.strong += 1;
+      if (signal === "estable") acc.stable += 1;
+      if (signal === "vigilar") acc.watch += 1;
+      if (signal === "tesis rota") acc.broken += 1;
+      return acc;
+    },
+    { strong: 0, stable: 0, watch: 0, broken: 0 }
+  );
+
+  document.querySelector(".day-summary").innerHTML = `
+    <div><strong class="good">${counts.strong}</strong><span>tesis fuerte</span></div>
+    <div><strong class="good">${counts.stable}</strong><span>estable</span></div>
+    <div><strong class="warn">${counts.watch}</strong><span>vigilar</span></div>
+    <div><strong class="bad">${counts.broken}</strong><span>rota</span></div>
+  `;
+
+  watchlistRows.innerHTML = assets.length
+    ? assets.map((asset) => assetRow(asset)).join("")
+    : '<article class="panel empty-state"><h2>Portfolio vacio</h2><p>Anade un ticker para empezar a monitorizar su tesis.</p></article>';
+}
+
+function sparkline(values, className = "") {
+  const width = 320;
+  const height = 150;
+  const min = Math.min(...values) - 4;
+  const max = Math.max(...values) + 4;
+  const points = values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * width;
+      const y = height - ((value - min) / (max - min)) * (height - 18) - 9;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return `<polyline class="${className}" points="${points}" />`;
+}
+
+function renderDetail() {
+  const asset = assetByTicker();
+  document.querySelector("#screen-detail").innerHTML = `
+    <article class="asset-hero">
+      <div class="logo-mark">${logoText(asset.ticker)}</div>
+      <div><h2>${asset.ticker}</h2><p>${asset.company}</p></div>
+    </article>
+    <div class="price-row">
+      <div>
+        <strong>${formatPrice(asset)}</strong>
+        <span class="${asset.change >= 0 ? "good" : "bad"}">${asset.change >= 0 ? "+" : ""}${asset.change}% hoy</span>
+      </div>
+      <button class="signal-button ${toneForScore(asset.score) === "good" ? "good-bg" : "warn-bg"}" type="button">${signalForScore(asset.score)}</button>
+    </div>
+    <nav class="tabs" aria-label="Detalle de activo">
+      <button class="is-selected" type="button">Resumen</button>
+      <button type="button" data-route="thesis">Analisis</button>
+      <button type="button" data-route="report">Informe</button>
+      <button type="button" data-route="history">Scores</button>
+    </nav>
+    <div class="quick-actions compact-actions" aria-label="Accesos del activo">
+      <button data-route="history" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
+        <span>Historico</span>
+      </button>
+      <button data-route="thesis" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v10l8 4 8-4V7z" /><path d="M12 7v14" /></svg>
+        <span>Ver tesis</span>
+      </button>
+    </div>
+    <article class="panel">
+      <h2>Grafico de precio</h2>
+      <div class="range-tabs"><span>1D</span><span>1S</span><span class="is-on">1M</span><span>3M</span><span>1A</span><span>5A</span></div>
+      <svg class="line-chart" viewBox="0 0 320 150" role="img" aria-label="Grafico de precio de ${asset.ticker}">
+        <path class="gridline" d="M0 35h320M0 75h320M0 115h320" />
+        ${sparkline(asset.history)}
+      </svg>
+    </article>
+    <article class="panel">
+      <h2>Niveles clave</h2>
+      <dl class="metric-list">${asset.keyLevels.map(([key, value]) => `<div><dt>${key}</dt><dd>${value}</dd></div>`).join("")}</dl>
+    </article>
+    <article class="panel event-list">
+      <h2>Eventos proximos</h2>
+      ${asset.events.map(([type, date, note]) => `<p><strong>${date}</strong><span>${type}</span>${note}</p>`).join("")}
+    </article>
+  `;
+}
+
+function reviewSummary(asset) {
+  if (asset.score >= 78) return `La tesis de ${asset.name} se mantiene solida. Los drivers principales siguen activos y ningun breaker local ha sido activado.`;
+  if (asset.score >= 65) return `La tesis de ${asset.name} sigue en pie, pero requiere vigilancia por valoracion, tecnico o sensibilidad a eventos proximos.`;
+  return `La tesis de ${asset.name} necesita revision profunda antes de aumentar exposicion. Hay senales que podrian debilitar la conviccion.`;
+}
+
+function scoreLine(label, value) {
+  return `<div><span>${label}</span><meter min="0" max="100" value="${value}"></meter><strong>${value}/100</strong></div>`;
+}
+
+function renderReport() {
+  const asset = assetByTicker();
+  const last = state.lastReviewByTicker[asset.ticker];
+  const scoreDelta = asset.score - asset.previousScore;
+  document.querySelector("#screen-report").innerHTML = `
+    <article class="panel report-card">
+      <div>
+        <h2>${asset.ticker} - ${asset.name}</h2>
+        <p>Score <strong>${asset.score}</strong>/100</p>
+        <span class="${scoreDelta >= 0 ? "good" : "bad"}">Anterior: ${asset.previousScore}/100 ${scoreDelta >= 0 ? "+" : ""}${scoreDelta}</span>
+      </div>
+      <button class="signal-button ${toneForScore(asset.score) === "good" ? "good-bg" : "warn-bg"}" type="button">${signalForScore(asset.score)}</button>
+    </article>
+    <article class="panel">
+      <h2>Resumen ejecutivo</h2>
+      <p>${reviewSummary(asset)}</p>
+      <div class="score-bars">
+        ${scoreLine("Tesis", asset.thesisScore)}
+        ${scoreLine("Fundamentales", asset.fundamentalsScore)}
+        ${scoreLine("Valoracion", asset.valuationScore)}
+        ${scoreLine("Noticias", asset.newsScore)}
+        ${scoreLine("Tecnico", asset.technicalScore)}
+      </div>
+    </article>
+    <article class="panel">
+      <h2>Revision manual</h2>
+      <p id="manualReviewText">${last ? last.message : "Pulsa revisar para validar la tesis con los datos locales disponibles. No se haran busquedas web."}</p>
+      <button class="wide-button" id="manualReviewButton" type="button">${last ? "Revisar de nuevo" : "Revisar tesis ahora"}</button>
+    </article>
+    <article class="panel insight-list">
+      <h2>Que cambio desde la ultima revision</h2>
+      <p><span class="ok-dot"></span>Eventos guardados revisados contra drivers y breakers.</p>
+      <p><span class="warn-dot"></span>Datos financieros pendientes de conectar a JSON Yahoo.</p>
+    </article>
+  `;
+  document.querySelector("#manualReviewButton").addEventListener("click", runManualReview);
+}
+
+function renderThesis() {
+  const asset = assetByTicker();
+  document.querySelector("#screen-thesis").innerHTML = `
+    <article class="asset-hero">
+      <div class="logo-mark">${logoText(asset.ticker)}</div>
+      <div><h2>${asset.ticker}</h2><p>${asset.company}</p></div>
+    </article>
+    <article class="panel">
+      <h2>Resumen de la tesis</h2>
+      <p>${asset.thesis}</p>
+    </article>
+    <article class="panel checklist">
+      <h2>Drivers positivos</h2>
+      ${asset.drivers.map((item) => `<p><span class="ok-dot"></span>${item}</p>`).join("")}
+    </article>
+    <article class="panel checklist">
+      <h2>Thesis breakers</h2>
+      ${asset.breakers.map((item) => `<p><span class="bad-dot"></span>${item}</p>`).join("")}
+    </article>
+    <article class="panel checklist">
+      <h2>Riesgos principales</h2>
+      ${asset.risks.map((item) => `<p><span class="warn-dot"></span>${item}</p>`).join("")}
+    </article>
+    <article class="panel event-list">
+      <h2>Eventos que alimentan la tesis</h2>
+      ${asset.events.map(([type, date, note]) => `<p><strong>${date}</strong><span>${type}</span>${note}</p>`).join("")}
+    </article>
+  `;
+}
+
+function renderHistory() {
+  const asset = assetByTicker();
+  document.querySelector("#screen-history").innerHTML = `
+    <div class="range-tabs large"><span class="is-on">1M</span><span>3M</span><span>6M</span><span>1A</span><span>Todo</span></div>
+    <article class="panel">
+      <h2>Score total</h2>
+      <svg class="line-chart tall" viewBox="0 0 320 180" role="img" aria-label="Historico de score total de ${asset.ticker}">
+        <path class="gridline" d="M0 35h320M0 75h320M0 115h320M0 155h320" />
+        ${sparkline(asset.history, "green")}
+      </svg>
+    </article>
+    <article class="panel">
+      <h2>Desglose de scores</h2>
+      <svg class="line-chart tall multi" viewBox="0 0 320 180" role="img" aria-label="Historico desglosado de ${asset.ticker}">
+        <path class="gridline" d="M0 35h320M0 75h320M0 115h320M0 155h320" />
+        ${sparkline(asset.history.map((v) => Math.min(100, v + 8)), "green")}
+        ${sparkline(asset.history.map((v, i) => Math.max(0, v - 5 + (i % 3) * 2)), "cyan")}
+        ${sparkline(asset.history.map((v, i) => Math.max(0, v - 14 + (i % 4))), "yellow")}
+        ${sparkline(asset.history.map((v, i) => Math.max(0, v - 10 - (i % 2) * 3)), "purple")}
+      </svg>
+      <div class="legend"><span class="good">Tesis</span><span>Fundamentales</span><span class="warn">Valoracion</span><span class="purple-text">Noticias</span></div>
+    </article>
+  `;
+}
+
+function renderSearch() {
+  const term = tickerSearch?.value?.trim().toLowerCase() || "";
+  const portfolio = new Set(state.portfolio);
+  const results = catalog.filter((asset) => {
+    const haystack = `${asset.ticker} ${asset.name} ${asset.company} ${asset.sector}`.toLowerCase();
+    return !term || haystack.includes(term);
+  });
+  searchResults.innerHTML = results
+    .filter((asset) => !portfolio.has(asset.ticker) || term)
+    .map((asset) => assetRow(asset, "search"))
+    .join("");
+}
+
+function renderDiscovery() {
+  const thesisText = document.querySelector("#thesisInput")?.value || "";
+  const terms = thesisText.toLowerCase();
+  const scored = catalog
+    .map((asset) => {
+      let fit = asset.score;
+      if (terms.includes("china") && asset.ticker.endsWith(".HK")) fit += 4;
+      if (terms.includes("logistica") && asset.sector.toLowerCase().includes("logistica")) fit += 8;
+      if (terms.includes("finanzas") && asset.sector.toLowerCase().includes("banca")) fit += 7;
+      if (terms.includes("semiconductores") && asset.sector.toLowerCase().includes("semiconductores")) fit += 8;
+      return { ...asset, fit: Math.min(99, fit) };
+    })
+    .sort((a, b) => b.fit - a.fit)
+    .slice(0, 4);
+
+  discoveryResults.innerHTML = scored
+    .map(
+      (asset) => `
+        <button class="asset-row" type="button" data-open-ticker="${asset.ticker}" data-route="detail">
+          <span class="logo-mark">${logoText(asset.ticker)}</span>
+          <span><h3>${asset.name} <span class="muted">${asset.ticker}</span></h3><p>${asset.sector}</p></span>
+          <span class="asset-price"><strong class="good">${asset.fit}</strong><p>Fit</p></span>
+        </button>
+      `
+    )
+    .join("");
+}
+
+function renderActiveScreen(route) {
+  if (route === "watchlist") renderWatchlist();
+  if (route === "detail") renderDetail();
+  if (route === "report") renderReport();
+  if (route === "thesis") renderThesis();
+  if (route === "history") renderHistory();
+  if (route === "add") renderSearch();
+  if (route === "discovery") renderDiscovery();
+}
+
+function setRoute(route, push = true) {
+  if (!routes.includes(route)) return;
+  renderActiveScreen(route);
+  document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("is-active"));
+  const active = document.querySelector(`#screen-${route}`);
+  const asset = assetByTicker();
+  active.classList.add("is-active");
+  screenTitle.textContent = route === "detail" ? asset.ticker : active.dataset.title;
+  screenSubtitle.textContent = ["detail", "history"].includes(route) ? asset.company : active.dataset.subtitle;
+  topAction.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${actionIcon(active.dataset.action)}</svg>`;
+  topAction.style.visibility = active.dataset.action === "none" ? "hidden" : "visible";
+  backButton.style.visibility = route === "watchlist" ? "hidden" : "visible";
+  document.querySelectorAll(".bottom-nav button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.route === route);
+  });
+  if (push && routeHistory[routeHistory.length - 1] !== route) routeHistory.push(route);
+}
+
+function runManualReview() {
+  const asset = assetByTicker();
+  const now = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const eventText = asset.events.length ? `${asset.events.length} evento(s) proximos incorporados al contexto.` : "Sin eventos proximos.";
+  const message = `Revision local completada a las ${now}. La tesis sigue <strong class="${toneForScore(asset.score)}">${signalForScore(asset.score)}</strong>: ${eventText} No se ha usado web search.`;
+  state.lastReviewByTicker[asset.ticker] = { at: now, message };
+  saveState();
+  renderReport();
+}
+
+function addTicker(ticker) {
+  if (!state.portfolio.includes(ticker)) state.portfolio.push(ticker);
+  state.selectedTicker = ticker;
+  saveState();
+  showToast(`${ticker} anadido al portfolio`);
+  setRoute("detail");
+}
+
+function showToast(message) {
+  let toast = document.querySelector(".toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "toast";
+    document.querySelector(".phone").appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("is-visible");
+  window.setTimeout(() => toast.classList.remove("is-visible"), 1800);
+}
+
+function installServiceWorker() {
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+}
+
+renderWatchlist();
+renderSearch();
+renderDiscovery();
+setRoute("watchlist", false);
+installServiceWorker();
+
+document.addEventListener("click", (event) => {
+  const addButton = event.target.closest("[data-add-ticker]");
+  if (addButton) {
+    addTicker(addButton.dataset.addTicker);
+    return;
+  }
+
+  const openTicker = event.target.closest("[data-open-ticker]");
+  if (openTicker) {
+    state.selectedTicker = openTicker.dataset.openTicker;
+    saveState();
+  }
+
+  const routeButton = event.target.closest("[data-route]");
+  if (routeButton) setRoute(routeButton.dataset.route);
+});
+
+backButton.addEventListener("click", () => {
+  routeHistory.pop();
+  setRoute(routeHistory.pop() || "watchlist");
+});
+
+document.querySelector("#discoveryButton").addEventListener("click", () => {
+  renderDiscovery();
+  discoveryResults.animate(
+    [{ opacity: 0.45, transform: "translateY(6px)" }, { opacity: 1, transform: "translateY(0)" }],
+    { duration: 260, easing: "ease-out" }
+  );
+});
+
+tickerSearch.addEventListener("input", renderSearch);

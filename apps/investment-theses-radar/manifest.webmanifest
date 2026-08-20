@@ -1,0 +1,17 @@
+{
+  "name": "Investment Theses Radar",
+  "short_name": "Thesis Radar",
+  "description": "Portfolio monitoring driven by investment theses.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#03141c",
+  "theme_color": "#03141c",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
