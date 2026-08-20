@@ -22,6 +22,7 @@ function defaultState() {
     reportsByTicker: {},
     reportHistoryByTicker: {},
     priceHistoryByTicker: {},
+    discoveryHistory: [],
     quoteStatusByTicker: {},
     lastDataRefresh: null,
     sync: {
@@ -69,6 +70,7 @@ function mergeState(base, saved) {
     sync: { ...base.sync, ...saved.sync },
     ai: { ...base.ai, ...saved.ai },
     search: { ...base.search, ...saved.search },
+    discoveryHistory: Array.isArray(saved.discoveryHistory) ? saved.discoveryHistory : base.discoveryHistory,
   };
 }
 
@@ -475,11 +477,20 @@ function renderSearch() {
 }
 
 function renderDiscovery() {
+  const latest = state.discoveryHistory[0];
   document.querySelector("#screen-discovery").innerHTML = `
     <article class="panel"><h2>Thesis Discovery</h2><p>Describe una tesis y la IA buscara candidatos usando Brave. No se muestran sugerencias si no hay respuesta real de la API.</p></article>
     <article class="step-card"><span>1</span><label>Idea de inversion</label><textarea id="discoveryPrompt" placeholder="Ej. Empresas europeas con moat en semiconductores, baja deuda y crecimiento estructural."></textarea></article>
     <button class="wide-button" type="button" data-discovery-ai>Buscar activos</button>
-    <div id="discoveryResults"></div>
+    <div class="button-grid">
+      <button class="wide-button ghost" type="button" data-analyze-discovery-latest ${latest?.suggestions?.length ? "" : "disabled"}>Investigar ultimo lote</button>
+      <button class="wide-button ghost" type="button" data-clear-discovery-history ${state.discoveryHistory.length ? "" : "disabled"}>Limpiar historial</button>
+    </div>
+    <div id="discoveryResults">${latest ? renderDiscoveryResultHtml(latest.suggestions || [], latest.id) : ""}</div>
+    <article class="panel source-list">
+      <h2>Historial</h2>
+      ${state.discoveryHistory.length ? state.discoveryHistory.map((item) => `<p><strong>${escapeHtml(formatTimestamp(item.createdAt))}</strong><span>${escapeHtml((item.suggestions || []).length)} sugerencias</span>${escapeHtml(item.thesis)}</p><button class="wide-button ghost" type="button" data-load-discovery="${item.id}">Ver lote</button><button class="wide-button ghost" type="button" data-analyze-discovery="${item.id}">Investigar lote</button>`).join("") : "<p>No hay tesis discovery guardadas.</p>"}
+    </article>
   `;
 }
 
@@ -635,7 +646,7 @@ async function refreshMarketData(ticker = null) {
   showToast(`${results.filter((item) => item.quote).length}/${results.length} precios actualizados`);
 }
 
-async function generateReport(ticker, includeWeb = false) {
+async function generateReport(ticker, includeWeb = false, options = {}) {
   const asset = assetByTicker(ticker);
   if (!asset) return;
   if (!hasSupabaseConfig()) {
@@ -643,7 +654,7 @@ async function generateReport(ticker, includeWeb = false) {
     showToast("Configura Supabase");
     return;
   }
-  showToast("Analizando ticker...");
+  if (!options.quiet) showToast("Analizando ticker...");
   try {
     resetSearchUsageIfNeeded();
     if (Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
@@ -667,14 +678,16 @@ async function generateReport(ticker, includeWeb = false) {
     state.search.lastError = "";
     state.ai.lastError = "";
     saveState();
-    setRoute("report");
-    showToast("Informe generado");
+    setRoute(options.stayOnRoute || "report");
+    if (!options.quiet) showToast("Informe generado");
   } catch (error) {
     state.search.lastError = error.message;
     state.ai.lastError = error.message;
     saveState();
-    setRoute("settings");
-    showToast("Error OpenAI");
+    if (!options.quiet) {
+      setRoute("settings");
+      showToast("Error OpenAI");
+    }
   }
 }
 
@@ -783,8 +796,19 @@ async function discoverAssets() {
     const data = text ? JSON.parse(text) : {};
     if (!response.ok) throw new Error(data?.error || `Supabase Function HTTP ${response.status}`);
     state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
-    renderDiscoveryResults(data.suggestions || []);
+    const batch = {
+      id: crypto.randomUUID(),
+      thesis: prompt,
+      suggestions: data.suggestions || [],
+      sources: data.sources || [],
+      query: data.query || "",
+      model: data.model || state.ai.model,
+      createdAt: new Date().toISOString(),
+    };
+    state.discoveryHistory = [batch, ...state.discoveryHistory].slice(0, 25);
     saveState();
+    setRoute("discovery", false);
+    renderDiscoveryResults(batch.suggestions);
     showToast("Discovery listo");
   } catch (error) {
     state.ai.lastError = error.message;
@@ -796,9 +820,43 @@ async function discoverAssets() {
 function renderDiscoveryResults(suggestions) {
   const box = document.querySelector("#discoveryResults");
   if (!box) return;
-  box.innerHTML = suggestions.length
+  box.innerHTML = renderDiscoveryResultHtml(suggestions);
+}
+
+function renderDiscoveryResultHtml(suggestions, batchId = "") {
+  return suggestions.length
     ? suggestions.map((item) => `<article class="asset-row"><button class="asset-main" type="button" data-add-suggestion="${escapeHtml(item.ticker || "")}" data-company="${escapeHtml(item.company || "")}" data-sector="${escapeHtml(item.sector || item.assetType || "")}" data-thesis="${escapeHtml(`${item.thesisRole || item.assetType || "activo"}: ${item.rationale || ""}`)}"><span class="logo-mark">${logoText(item.ticker || "")}</span><span><h3>${escapeHtml(item.ticker || "")}</h3><p>${escapeHtml(item.assetType || item.sector || "Activo")} - ${escapeHtml(item.thesisRole || "encaje")}<br>${escapeHtml(item.rationale || "")}</p></span><span class="asset-price"><strong>${escapeHtml(String(item.score || ""))}</strong><p>score</p></span></button></article>`).join("")
     : `<article class="panel empty-state"><h2>Sin resultados</h2><p>La API no devolvio candidatos utilizables.</p></article>`;
+}
+
+function loadDiscoveryBatch(id) {
+  const batch = state.discoveryHistory.find((item) => item.id === id);
+  if (!batch) return showToast("Lote no encontrado");
+  const prompt = document.querySelector("#discoveryPrompt");
+  if (prompt) prompt.value = batch.thesis || "";
+  const box = document.querySelector("#discoveryResults");
+  if (box) box.innerHTML = renderDiscoveryResultHtml(batch.suggestions || [], batch.id);
+}
+
+async function analyzeDiscoveryBatch(id = state.discoveryHistory[0]?.id) {
+  const batch = state.discoveryHistory.find((item) => item.id === id);
+  const suggestions = (batch?.suggestions || []).filter((item) => item.ticker);
+  if (!suggestions.length) return showToast("No hay sugerencias");
+  showToast(`Investigando ${suggestions.length} activos...`);
+  for (const item of suggestions) {
+    const ticker = ensureTicker(item.ticker || "");
+    if (!ticker) continue;
+    state.assetsByTicker[ticker] = {
+      ...state.assetsByTicker[ticker],
+      company: item.company || state.assetsByTicker[ticker].company,
+      sector: item.sector || item.assetType || state.assetsByTicker[ticker].sector,
+      thesis: `${item.thesisRole || item.assetType || "activo"}: ${item.rationale || ""}`,
+    };
+    saveState();
+    await generateReport(ticker, true, { stayOnRoute: "discovery", quiet: true });
+  }
+  setRoute("discovery", false);
+  showToast("Lote investigado");
 }
 
 function resetSearchUsageIfNeeded() {
@@ -1052,6 +1110,17 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-export-state]")) return exportState();
   if (event.target.closest("[data-import-state]")) return importState();
   if (event.target.closest("[data-reset-state]")) return resetState();
+  const loadDiscovery = event.target.closest("[data-load-discovery]");
+  if (loadDiscovery) return loadDiscoveryBatch(loadDiscovery.dataset.loadDiscovery);
+  const analyzeDiscovery = event.target.closest("[data-analyze-discovery]");
+  if (analyzeDiscovery) return analyzeDiscoveryBatch(analyzeDiscovery.dataset.analyzeDiscovery);
+  if (event.target.closest("[data-analyze-discovery-latest]")) return analyzeDiscoveryBatch();
+  if (event.target.closest("[data-clear-discovery-history]")) {
+    state.discoveryHistory = [];
+    saveState();
+    setRoute("discovery", false);
+    return showToast("Historial limpiado");
+  }
   if (event.target.closest("[data-discovery-ai]")) return discoverAssets();
 });
 
