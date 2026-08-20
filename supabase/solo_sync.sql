@@ -10,6 +10,8 @@ create table if not exists public.user_sync_states (
 
 alter table public.user_sync_states enable row level security;
 
+grant select, insert, update on public.user_sync_states to anon;
+
 drop policy if exists "solo sync read" on public.user_sync_states;
 drop policy if exists "solo sync insert" on public.user_sync_states;
 drop policy if exists "solo sync update" on public.user_sync_states;
