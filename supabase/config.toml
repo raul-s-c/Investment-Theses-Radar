@@ -1,0 +1,2 @@
+[functions.analyze-thesis]
+verify_jwt = true

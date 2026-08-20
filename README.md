@@ -13,8 +13,8 @@ PWA mobile-first para monitorizar portfolio y validar tesis de inversion manualm
 - Actualizacion manual de precios con fuentes gratuitas experimentales: Stooq CSV y Yahoo chart.
 - Portfolio vacio por defecto: sin tickers, precios, graficos ni scores inventados.
 - Alta manual de tickers reales.
-- Informes con OpenAI bajo demanda usando la API key que pegues en Ajustes.
-- Busqueda web manual con Brave Search y analisis combinado con OpenAI.
+- Informes con OpenAI bajo demanda desde Supabase Edge Functions.
+- Busqueda web manual con Brave Search desde Supabase y analisis combinado con OpenAI.
 - Sincronizacion opcional movil/PC con Supabase en modo solo.
 - Calendario alimentado por resultados, dividendos y catalizadores editables.
 
@@ -40,7 +40,7 @@ La rama `gh-pages` publica la app como artefacto estatico en la raiz del reposit
 https://raul-s-c.github.io/Investment-Theses-Radar/
 ```
 
-La app no necesita backend para el MVP.
+La app necesita Supabase para sincronizacion y para ocultar las claves privadas de OpenAI/Brave.
 
 ## Datos financieros gratuitos
 
@@ -55,7 +55,7 @@ yfinance / yahoo-finance2 en una accion/proxy propio
 
 Esto evita APIs financieras de pago y evita llamadas directas desde el navegador a Yahoo, que suelen fallar por CORS o limites.
 
-## Sincronizacion y cache comunitaria
+## Supabase, sincronizacion y secrets
 
 La app funciona con `localStorage`, pero ya permite sincronizar movil y PC con Supabase.
 
@@ -69,6 +69,27 @@ Para probarlo ya:
    - anon public key
    - deja el `Sync key` generado o usa el mismo en movil y PC.
 5. En un dispositivo pulsa `Subir estado`; en el otro pulsa `Descargar`.
+
+Para generar informes IA sin exponer claves en GitHub Pages:
+
+1. Despliega la Edge Function `supabase/functions/analyze-thesis`.
+2. En Supabase, configura estos secrets:
+   - `OPENAI_API_KEY`
+   - `BRAVE_SEARCH_API_KEY`
+   - `OPENAI_MODEL` opcional, por defecto `gpt-5.4-mini`
+3. En la app solo introduces:
+   - Project URL
+   - anon public key
+   - Sync key
+
+La anon public key puede estar en el navegador si RLS/JWT estan bien configurados. `OPENAI_API_KEY`, `BRAVE_SEARCH_API_KEY` y cualquier `service_role` nunca deben vivir en la app ni en GitHub Pages.
+
+Comandos utiles con Supabase CLI:
+
+```powershell
+supabase functions deploy analyze-thesis
+supabase secrets set OPENAI_API_KEY=sk-... BRAVE_SEARCH_API_KEY=...
+```
 
 El esquema completo futuro esta en `supabase/schema.sql`.
 
@@ -86,10 +107,10 @@ Separacion de datos prevista:
 - Compartible: cache diaria de ticker, eventos publicos, fundamentals normalizados, conteo agregado de seguidores.
 - IA: revisiones cacheadas por `ticker + fecha + hash del input`, sin web search salvo accion explicita.
 
-Cuando activemos Supabase, GitHub Pages no debe guardar claves privadas. Opciones seguras:
+GitHub Pages no debe guardar claves privadas. Opciones seguras:
 
 - Cliente Supabase con anon key y RLS bien definido para datos publicos/agregados.
-- Mini API/proxy para operaciones privadas, llamadas a OpenAI y jobs de datos.
+- Supabase Edge Functions para llamadas a OpenAI, Brave y jobs de datos.
 - Service role solo en servidor o GitHub Actions, nunca en el navegador.
 
 Nota sobre el modo `solo_sync.sql`: es un puente temporal para uso personal. Usa anon key y una `sync_key` opaca; no debe ser la arquitectura final multiusuario.
@@ -99,18 +120,19 @@ Nota sobre el modo `solo_sync.sql`: es un puente temporal para uso personal. Usa
 - `web search`: desactivado por defecto.
 - Revision automatica: fuera del MVP.
 - Revision manual: usa tesis, eventos y datos reales disponibles.
-- ChatGPT API: puedes pegarla en Ajustes para pruebas. Se guarda solo en el navegador y no se sincroniza a Supabase.
-- Brave Search API: puedes pegarla en Ajustes. Cada boton `Buscar con Brave + analizar` consume una busqueda y guarda las fuentes usadas por ticker.
-- Las claves de OpenAI y Brave se guardan solo en el navegador y no se sincronizan a Supabase.
+- ChatGPT API: se configura como secret `OPENAI_API_KEY` en Supabase.
+- Brave Search API: se configura como secret `BRAVE_SEARCH_API_KEY` en Supabase.
+- Cada boton `Buscar con Brave + analizar` consume una busqueda y guarda las fuentes usadas por ticker.
+- Las claves de OpenAI y Brave no se guardan en el navegador ni se sincronizan a Supabase.
 - La app pide al modelo que no use web search propia: solo puede usar los datos del usuario y los snippets/enlaces devueltos por Brave.
 
 ## Brave Search
 
-La integracion usa el endpoint oficial `https://api.search.brave.com/res/v1/web/search` con el header `X-Subscription-Token`. Parametros iniciales:
+La Edge Function usa el endpoint oficial `https://api.search.brave.com/res/v1/web/search` con el header `X-Subscription-Token`. Parametros iniciales:
 
 - `count=8`
 - `country`: configurable, por defecto `US`
 - `search_lang`: configurable, por defecto `en`
 - `safesearch=moderate`
 
-Para produccion, mueve Brave/OpenAI a un proxy o Supabase Edge Function. Las API keys no deben vivir en cliente publico salvo pruebas personales.
+Brave/OpenAI ya estan preparados para funcionar en `supabase/functions/analyze-thesis`. Las API keys no deben vivir en cliente publico.

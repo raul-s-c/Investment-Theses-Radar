@@ -11,7 +11,7 @@ const screenSubtitle = document.querySelector("#screenSubtitle");
 const backButton = document.querySelector("#backButton");
 const topAction = document.querySelector("#topAction");
 
-let state = loadState();
+let state = sanitizeState(loadState());
 
 function defaultState() {
   return {
@@ -30,12 +30,10 @@ function defaultState() {
       status: "Sin configurar",
     },
     ai: {
-      apiKey: "",
       model: "gpt-5.4-mini",
       lastError: "",
     },
     search: {
-      braveApiKey: "",
       country: "US",
       language: "en",
       monthlyLimit: 1000,
@@ -70,7 +68,14 @@ function mergeState(base, saved) {
   };
 }
 
+function sanitizeState(nextState) {
+  if (nextState.ai) delete nextState.ai.apiKey;
+  if (nextState.search) delete nextState.search.braveApiKey;
+  return nextState;
+}
+
 function saveState() {
+  sanitizeState(state);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -407,17 +412,15 @@ function renderSettings() {
       <p class="muted tiny">Estado: ${escapeHtml(state.sync.status)}. Ultima sync: ${escapeHtml(formatTimestamp(state.sync.lastSyncAt))}.</p>
     </article>
     <article class="panel">
-      <h2>OpenAI</h2>
-      <p>Modo prueba: la key se guarda solo en este navegador. No uses esto como arquitectura final publica.</p>
-      <label class="form-field">API key<input name="openaiKey" type="password" value="${escapeHtml(state.ai.apiKey)}" placeholder="sk-..." /></label>
+      <h2>Analisis IA</h2>
+      <p>OpenAI se ejecuta en Supabase Edge Functions. La clave privada va en secrets de Supabase, no en esta app.</p>
       <label class="form-field">Modelo<input name="openaiModel" value="${escapeHtml(state.ai.model)}" /></label>
-      <button class="wide-button ghost" type="button" data-save-settings>Guardar API</button>
+      <button class="wide-button ghost" type="button" data-save-settings>Guardar modelo</button>
       ${state.ai.lastError ? `<p class="bad tiny">${escapeHtml(state.ai.lastError)}</p>` : ""}
     </article>
     <article class="panel">
       <h2>Brave Search</h2>
-      <p>Busquedas manuales para enriquecer informes. Cada informe con Brave consume una consulta.</p>
-      <label class="form-field">API key<input name="braveApiKey" type="password" value="${escapeHtml(state.search.braveApiKey)}" placeholder="BSA..." /></label>
+      <p>La busqueda web manual se ejecuta desde Supabase con <code>BRAVE_SEARCH_API_KEY</code> como secret.</p>
       <div class="button-grid">
         <label class="form-field">Pais<input name="braveCountry" value="${escapeHtml(state.search.country)}" placeholder="US" /></label>
         <label class="form-field">Idioma<input name="braveLanguage" value="${escapeHtml(state.search.language)}" placeholder="en" /></label>
@@ -592,55 +595,31 @@ async function fetchYahooChartQuote(asset) {
 async function generateReport(ticker, includeWeb = false) {
   const asset = assetByTicker(ticker);
   if (!asset) return;
-  if (!state.ai.apiKey) {
+  if (!hasSupabaseConfig()) {
     setRoute("settings");
-    showToast("Pega tu API key de OpenAI");
+    showToast("Configura Supabase");
     return;
   }
   showToast("Generando informe...");
   try {
-    let webContext = [];
+    if (includeWeb) resetSearchUsageIfNeeded();
+    if (includeWeb && Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
+      throw new Error("Limite mensual de Brave alcanzado");
+    }
+    const data = await invokeAnalyzeThesis(asset, includeWeb);
+    const report = data.report || {};
+    const raw = typeof report.raw === "string" ? report.raw : JSON.stringify(report, null, 2);
+    const sources = Array.isArray(data.sources) ? data.sources : [];
+    state.reportsByTicker[ticker] = { ...report, raw, model: data.model || state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: includeWeb, sourceCount: sources.length };
     if (includeWeb) {
-      webContext = await braveSearchForAsset(asset);
+      state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
+      state.search.lastResultsByTicker[ticker] = {
+        at: new Date().toISOString(),
+        query: data.query || buildBraveQuery(asset),
+        results: sources,
+      };
+      state.search.lastError = "";
     }
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.ai.apiKey}` },
-      body: JSON.stringify({
-        model: state.ai.model,
-        input: buildReportPrompt(asset, webContext),
-        text: {
-          format: {
-            type: "json_schema",
-            name: "investment_thesis_report",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                score: { type: "number" },
-                thesisStatus: { type: "string" },
-                summary: { type: "string" },
-                drivers: { type: "array", items: { type: "string" } },
-                risks: { type: "array", items: { type: "string" } },
-                actions: { type: "array", items: { type: "string" } },
-              },
-              required: ["score", "thesisStatus", "summary", "drivers", "risks", "actions"],
-            },
-          },
-        },
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
-    const outputText = data.output_text || data.output?.flatMap((item) => item.content || []).map((content) => content.text || "").join("\n") || "";
-    let parsed;
-    try {
-      parsed = JSON.parse(outputText);
-    } catch {
-      parsed = { raw: outputText };
-    }
-    state.reportsByTicker[ticker] = { ...parsed, raw: parsed.raw || outputText, model: state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: includeWeb, sourceCount: webContext.length };
     state.ai.lastError = "";
     saveState();
     setRoute("report");
@@ -654,45 +633,30 @@ async function generateReport(ticker, includeWeb = false) {
   }
 }
 
-async function braveSearchForAsset(asset) {
-  if (!state.search.braveApiKey) {
-    setRoute("settings");
-    throw new Error("Pega tu API key de Brave Search");
-  }
-  resetSearchUsageIfNeeded();
-  if (Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
-    throw new Error("Limite mensual de Brave alcanzado");
-  }
-  const query = buildBraveQuery(asset);
-  const url = new URL("https://api.search.brave.com/res/v1/web/search");
-  url.searchParams.set("q", query);
-  url.searchParams.set("count", "8");
-  url.searchParams.set("country", state.search.country || "US");
-  url.searchParams.set("search_lang", state.search.language || "en");
-  url.searchParams.set("safesearch", "moderate");
-  const response = await fetch(url, {
+async function invokeAnalyzeThesis(asset, includeWeb) {
+  const response = await fetch(`${state.sync.supabaseUrl.replace(/\/$/, "")}/functions/v1/analyze-thesis`, {
+    method: "POST",
     headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": state.search.braveApiKey,
+      apikey: state.sync.supabaseAnonKey,
+      Authorization: `Bearer ${state.sync.supabaseAnonKey}`,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({
+      asset,
+      position: state.positionsByTicker[asset.ticker] || {},
+      includeWeb,
+      model: state.ai.model,
+      search: {
+        country: state.search.country || "US",
+        language: state.search.language || "en",
+        count: 8,
+      },
+    }),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.message || data?.error || `Brave HTTP ${response.status}`);
-  const results = (data.web?.results || []).slice(0, 8).map((item) => ({
-    title: item.title || "",
-    url: item.url || "",
-    description: item.description || "",
-    age: item.age || "",
-  }));
-  state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
-  state.search.lastError = "";
-  state.search.lastResultsByTicker[asset.ticker] = {
-    at: new Date().toISOString(),
-    query,
-    results,
-  };
-  saveState();
-  return results;
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) throw new Error(data?.error || data?.message || `Supabase Function HTTP ${response.status}`);
+  return data;
 }
 
 function resetSearchUsageIfNeeded() {
@@ -759,10 +723,8 @@ async function syncPull() {
   try {
     const rows = await supabaseRequest(`user_sync_states?sync_key=eq.${encodeURIComponent(state.sync.syncKey)}&select=payload,updated_at&limit=1`);
     if (!rows.length) return showToast("No hay estado remoto");
-    const secrets = { apiKey: state.ai.apiKey, braveApiKey: state.search.braveApiKey, supabaseAnonKey: state.sync.supabaseAnonKey, supabaseUrl: state.sync.supabaseUrl };
+    const secrets = { supabaseAnonKey: state.sync.supabaseAnonKey, supabaseUrl: state.sync.supabaseUrl };
     state = mergeState(defaultState(), rows[0].payload || {});
-    state.ai.apiKey = secrets.apiKey;
-    state.search.braveApiKey = secrets.braveApiKey;
     state.sync.supabaseAnonKey = secrets.supabaseAnonKey;
     state.sync.supabaseUrl = secrets.supabaseUrl;
     state.sync.lastSyncAt = rows[0].updated_at;
@@ -780,8 +742,8 @@ async function syncPull() {
 
 function stateForCloud() {
   const clone = structuredClone(state);
-  clone.ai.apiKey = "";
-  clone.search.braveApiKey = "";
+  if (clone.ai) delete clone.ai.apiKey;
+  if (clone.search) delete clone.search.braveApiKey;
   clone.sync.supabaseAnonKey = "";
   clone.sync.supabaseUrl = "";
   return clone;
@@ -814,9 +776,7 @@ function saveSettingsFromScreen() {
   state.sync.supabaseUrl = screen.querySelector('[name="supabaseUrl"]')?.value.trim() ?? state.sync.supabaseUrl;
   state.sync.supabaseAnonKey = screen.querySelector('[name="supabaseAnonKey"]')?.value.trim() ?? state.sync.supabaseAnonKey;
   state.sync.syncKey = screen.querySelector('[name="syncKey"]')?.value.trim() || state.sync.syncKey;
-  state.ai.apiKey = screen.querySelector('[name="openaiKey"]')?.value.trim() ?? state.ai.apiKey;
   state.ai.model = screen.querySelector('[name="openaiModel"]')?.value.trim() || state.ai.model;
-  state.search.braveApiKey = screen.querySelector('[name="braveApiKey"]')?.value.trim() ?? state.search.braveApiKey;
   state.search.country = screen.querySelector('[name="braveCountry"]')?.value.trim() || state.search.country;
   state.search.language = screen.querySelector('[name="braveLanguage"]')?.value.trim() || state.search.language;
   state.search.monthlyLimit = Number(screen.querySelector('[name="braveMonthlyLimit"]')?.value || state.search.monthlyLimit) || 1000;
