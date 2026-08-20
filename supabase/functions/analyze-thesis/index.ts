@@ -294,9 +294,37 @@ function extractOutputText(data: Record<string, unknown>) {
     .join("\n");
 }
 
-async function openAiReport(model: string, prompt: string) {
+function parseOutputJson(outputText: string, fallback: unknown) {
+  try {
+    return JSON.parse(outputText);
+  } catch {
+    const match = outputText.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        return fallback;
+      }
+    }
+    return fallback;
+  }
+}
+
+function shouldRetryOpenAiWithoutSchema(errorMessage: string) {
+  const lower = errorMessage.toLowerCase();
+  return lower.includes("json_schema") || lower.includes("schema") || lower.includes("response format") || lower.includes("unsupported");
+}
+
+async function openAiJsonRequest(model: string, prompt: string, format: Record<string, unknown>, fallback: unknown) {
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) throw new Error("Falta el secret OPENAI_API_KEY en Supabase");
+
+  const requestBody = {
+    model,
+    input: prompt,
+    max_output_tokens: 2500,
+    text: { format },
+  };
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -304,134 +332,121 @@ async function openAiReport(model: string, prompt: string) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "investment_thesis_report",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              score: { type: "number" },
-              thesisStatus: { type: "string" },
-              summary: { type: "string" },
-              drivers: { type: "array", items: { type: "string" } },
-              risks: { type: "array", items: { type: "string" } },
-              actions: { type: "array", items: { type: "string" } },
-              assetPatch: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  company: { type: "string" },
-                  sector: { type: "string" },
-                  currency: { type: "string" },
-                  price: { type: "string" },
-                  changePercent: { type: "string" },
-                  thesis: { type: "string" },
-                  drivers: { type: "array", items: { type: "string" } },
-                  breakers: { type: "array", items: { type: "string" } },
-                  risks: { type: "array", items: { type: "string" } },
-                  events: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      additionalProperties: false,
-                      properties: {
-                        type: { type: "string" },
-                        date: { type: "string" },
-                        note: { type: "string" },
-                      },
-                      required: ["type", "date", "note"],
-                    },
-                  },
-                  fundamentals: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      additionalProperties: false,
-                      properties: {
-                        label: { type: "string" },
-                        value: { type: "string" },
-                      },
-                      required: ["label", "value"],
-                    },
-                  },
-                },
-                required: ["company", "sector", "currency", "price", "changePercent", "thesis", "drivers", "breakers", "risks", "events", "fundamentals"],
-              },
-            },
-            required: ["score", "thesisStatus", "summary", "drivers", "risks", "actions", "assetPatch"],
-          },
-        },
-      },
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
+  if (!response.ok) {
+    const message = data?.error?.message || data?.message || `OpenAI HTTP ${response.status}`;
+    throw new Error(message);
+  }
 
-  const outputText = extractOutputText(data);
+  return parseOutputJson(extractOutputText(data), fallback);
+}
+
+async function openAiJsonWithFallback(model: string, prompt: string, schemaFormat: Record<string, unknown>, fallback: unknown) {
   try {
-    return JSON.parse(outputText);
-  } catch {
-    return { raw: outputText };
+    return await openAiJsonRequest(model, prompt, schemaFormat, fallback);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!shouldRetryOpenAiWithoutSchema(message)) throw error;
+    const jsonPrompt = `${prompt}\n\nIMPORTANTE: responde solo con JSON valido, sin markdown ni texto adicional.`;
+    return await openAiJsonRequest(model, jsonPrompt, { type: "json_object" }, fallback);
   }
 }
 
+async function openAiReport(model: string, prompt: string) {
+  return await openAiJsonWithFallback(model, prompt, {
+    type: "json_schema",
+    name: "investment_thesis_report",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        score: { type: "number" },
+        thesisStatus: { type: "string" },
+        summary: { type: "string" },
+        drivers: { type: "array", items: { type: "string" } },
+        risks: { type: "array", items: { type: "string" } },
+        actions: { type: "array", items: { type: "string" } },
+        assetPatch: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            company: { type: "string" },
+            sector: { type: "string" },
+            currency: { type: "string" },
+            price: { type: "string" },
+            changePercent: { type: "string" },
+            thesis: { type: "string" },
+            drivers: { type: "array", items: { type: "string" } },
+            breakers: { type: "array", items: { type: "string" } },
+            risks: { type: "array", items: { type: "string" } },
+            events: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  type: { type: "string" },
+                  date: { type: "string" },
+                  note: { type: "string" },
+                },
+                required: ["type", "date", "note"],
+              },
+            },
+            fundamentals: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  label: { type: "string" },
+                  value: { type: "string" },
+                },
+                required: ["label", "value"],
+              },
+            },
+          },
+          required: ["company", "sector", "currency", "price", "changePercent", "thesis", "drivers", "breakers", "risks", "events", "fundamentals"],
+        },
+      },
+      required: ["score", "thesisStatus", "summary", "drivers", "risks", "actions", "assetPatch"],
+    },
+  }, { raw: "" });
+}
+
 async function openAiDiscovery(model: string, prompt: string) {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) throw new Error("Falta el secret OPENAI_API_KEY en Supabase");
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      input: prompt,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "thesis_discovery",
-          strict: true,
-          schema: {
+  return await openAiJsonWithFallback(model, prompt, {
+    type: "json_schema",
+    name: "thesis_discovery",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        suggestions: {
+          type: "array",
+          items: {
             type: "object",
             additionalProperties: false,
             properties: {
-              suggestions: {
-                type: "array",
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    ticker: { type: "string" },
-                    company: { type: "string" },
-                    sector: { type: "string" },
-                    assetType: { type: "string" },
-                    thesisRole: { type: "string" },
-                    rationale: { type: "string" },
-                    score: { type: "number" },
-                  },
-                  required: ["ticker", "company", "sector", "assetType", "thesisRole", "rationale", "score"],
-                },
-              },
+              ticker: { type: "string" },
+              company: { type: "string" },
+              sector: { type: "string" },
+              assetType: { type: "string" },
+              thesisRole: { type: "string" },
+              rationale: { type: "string" },
+              score: { type: "number" },
             },
-            required: ["suggestions"],
+            required: ["ticker", "company", "sector", "assetType", "thesisRole", "rationale", "score"],
           },
         },
       },
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
-  const outputText = extractOutputText(data);
-  try {
-    return JSON.parse(outputText);
-  } catch {
-    return { suggestions: [] };
-  }
+      required: ["suggestions"],
+    },
+  }, { suggestions: [] });
 }
 
 Deno.serve(async (request) => {
