@@ -18,6 +18,24 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function knownPublishableKeys() {
+  const raw = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Object.values(parsed).filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+}
+
+function isAuthorized(request: Request) {
+  const key = request.headers.get("apikey") || "";
+  const known = knownPublishableKeys();
+  if (known.length) return known.includes(key);
+  return key.startsWith("sb_publishable_");
+}
+
 function buildBraveQuery(asset: Record<string, unknown>) {
   const ticker = String(asset.ticker || "").trim();
   const company = String(asset.company || ticker).trim();
@@ -139,6 +157,7 @@ async function openAiReport(model: string, prompt: string) {
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  if (!isAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
   try {
     const body = await request.json();

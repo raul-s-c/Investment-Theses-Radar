@@ -77,12 +77,9 @@ Para generar informes IA sin exponer claves en GitHub Pages:
    - `OPENAI_API_KEY`
    - `BRAVE_SEARCH_API_KEY`
    - `OPENAI_MODEL` opcional, por defecto `gpt-5.4-mini`
-3. En la app solo introduces:
-   - Project URL
-   - anon public key
-   - Sync key
+3. La app ya lleva integrado el Project URL y la publishable key de Supabase. En Ajustes solo conservas la misma Sync key entre dispositivos.
 
-La anon public key puede estar en el navegador si RLS/JWT estan bien configurados. `OPENAI_API_KEY`, `BRAVE_SEARCH_API_KEY` y cualquier `service_role` nunca deben vivir en la app ni en GitHub Pages.
+La publishable key puede estar en el navegador. `OPENAI_API_KEY`, `BRAVE_SEARCH_API_KEY`, `sb_secret_...` y cualquier `service_role` nunca deben vivir en la app ni en GitHub Pages.
 
 Comandos utiles con Supabase CLI:
 

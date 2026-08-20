@@ -1,4 +1,9 @@
 const STORAGE_KEY = "thesis-radar-real-v1";
+const APP_CONFIG = {
+  supabaseUrl: "https://nasuybwjddcrrmekcslu.supabase.co",
+  supabaseAnonKey: "sb_publishable_olGEIuWleNo6N-C-5HN3DA_dQ3VVYMw",
+};
+
 const routes = ["watchlist", "detail", "report", "thesis", "history", "calendar", "add", "discovery", "settings"];
 const routeHistory = ["watchlist"];
 const DATA_SOURCES = [
@@ -23,8 +28,8 @@ function defaultState() {
     quoteStatusByTicker: {},
     lastDataRefresh: null,
     sync: {
-      supabaseUrl: "",
-      supabaseAnonKey: "",
+      supabaseUrl: APP_CONFIG.supabaseUrl,
+      supabaseAnonKey: APP_CONFIG.supabaseAnonKey,
       syncKey: crypto.randomUUID(),
       lastSyncAt: null,
       status: "Sin configurar",
@@ -71,6 +76,10 @@ function mergeState(base, saved) {
 function sanitizeState(nextState) {
   if (nextState.ai) delete nextState.ai.apiKey;
   if (nextState.search) delete nextState.search.braveApiKey;
+  if (nextState.sync) {
+    nextState.sync.supabaseUrl = APP_CONFIG.supabaseUrl || nextState.sync.supabaseUrl || "";
+    nextState.sync.supabaseAnonKey = APP_CONFIG.supabaseAnonKey || nextState.sync.supabaseAnonKey || "";
+  }
   return nextState;
 }
 
@@ -86,6 +95,12 @@ function escapeHtml(value = "") {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function maskKey(value = "") {
+  if (!value) return "";
+  if (value.length <= 14) return "********";
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
 }
 
 function toLines(value) {
@@ -400,12 +415,13 @@ function renderDiscovery() {
 }
 
 function renderSettings() {
+  const hasIntegratedSupabase = Boolean(APP_CONFIG.supabaseUrl && APP_CONFIG.supabaseAnonKey);
   document.querySelector("#screen-settings").innerHTML = `
     <article class="panel">
       <h2>Supabase</h2>
-      <p>Para sincronizar movil y PC, crea un proyecto y ejecuta <code>supabase/solo_sync.sql</code>. Luego pega URL y anon key aqui.</p>
-      <label class="form-field">Project URL<input name="supabaseUrl" value="${escapeHtml(state.sync.supabaseUrl)}" placeholder="https://xxxx.supabase.co" /></label>
-      <label class="form-field">Anon public key<input name="supabaseAnonKey" value="${escapeHtml(state.sync.supabaseAnonKey)}" placeholder="eyJ..." /></label>
+      <p>${hasIntegratedSupabase ? "Supabase viene integrado en la app. Solo conserva la misma Sync key entre movil y PC." : "Falta integrar Supabase en APP_CONFIG. Mientras tanto puedes pegar Project URL y anon key aqui."}</p>
+      <label class="form-field">Project URL<input name="supabaseUrl" value="${escapeHtml(state.sync.supabaseUrl)}" placeholder="https://xxxx.supabase.co" ${hasIntegratedSupabase ? "readonly" : ""} /></label>
+      <label class="form-field">Anon public key<input name="supabaseAnonKey" value="${escapeHtml(hasIntegratedSupabase ? maskKey(state.sync.supabaseAnonKey) : state.sync.supabaseAnonKey)}" placeholder="eyJ..." ${hasIntegratedSupabase ? "readonly" : ""} /></label>
       <label class="form-field">Sync key<input name="syncKey" value="${escapeHtml(state.sync.syncKey)}" /></label>
       <div class="button-grid"><button class="wide-button ghost" type="button" data-save-settings>Guardar</button><button class="wide-button ghost" type="button" data-sync-pull>Descargar</button></div>
       <button class="wide-button ghost" type="button" data-sync-push>Subir estado</button>
@@ -634,13 +650,9 @@ async function generateReport(ticker, includeWeb = false) {
 }
 
 async function invokeAnalyzeThesis(asset, includeWeb) {
-  const response = await fetch(`${state.sync.supabaseUrl.replace(/\/$/, "")}/functions/v1/analyze-thesis`, {
+  const response = await fetch(`${supabaseUrl()}/functions/v1/analyze-thesis`, {
     method: "POST",
-    headers: {
-      apikey: state.sync.supabaseAnonKey,
-      Authorization: `Bearer ${state.sync.supabaseAnonKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: supabaseHeaders(),
     body: JSON.stringify({
       asset,
       position: state.positionsByTicker[asset.ticker] || {},
@@ -750,16 +762,22 @@ function stateForCloud() {
 }
 
 function hasSupabaseConfig() {
-  return state.sync.supabaseUrl && state.sync.supabaseAnonKey && state.sync.syncKey;
+  return supabaseUrl() && supabaseAnonKey() && state.sync.syncKey;
+}
+
+function supabaseUrl() {
+  return (APP_CONFIG.supabaseUrl || state.sync.supabaseUrl || "").replace(/\/$/, "");
+}
+
+function supabaseAnonKey() {
+  return APP_CONFIG.supabaseAnonKey || state.sync.supabaseAnonKey || "";
 }
 
 async function supabaseRequest(path, options = {}) {
-  const response = await fetch(`${state.sync.supabaseUrl.replace(/\/$/, "")}/rest/v1/${path}`, {
+  const response = await fetch(`${supabaseUrl()}/rest/v1/${path}`, {
     method: options.method || "GET",
     headers: {
-      apikey: state.sync.supabaseAnonKey,
-      Authorization: `Bearer ${state.sync.supabaseAnonKey}`,
-      "Content-Type": "application/json",
+      ...supabaseHeaders(),
       Prefer: options.prefer ? `${options.prefer},return=representation` : "return=representation",
     },
     body: options.body,
@@ -770,11 +788,23 @@ async function supabaseRequest(path, options = {}) {
   return data || [];
 }
 
+function supabaseHeaders() {
+  const key = supabaseAnonKey();
+  const headers = {
+    apikey: key,
+    "Content-Type": "application/json",
+  };
+  if (key && !key.startsWith("sb_publishable_")) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+  return headers;
+}
+
 function saveSettingsFromScreen() {
   const screen = document.querySelector("#screen-settings");
   if (!screen) return;
-  state.sync.supabaseUrl = screen.querySelector('[name="supabaseUrl"]')?.value.trim() ?? state.sync.supabaseUrl;
-  state.sync.supabaseAnonKey = screen.querySelector('[name="supabaseAnonKey"]')?.value.trim() ?? state.sync.supabaseAnonKey;
+  state.sync.supabaseUrl = APP_CONFIG.supabaseUrl || screen.querySelector('[name="supabaseUrl"]')?.value.trim() || state.sync.supabaseUrl;
+  state.sync.supabaseAnonKey = APP_CONFIG.supabaseAnonKey || screen.querySelector('[name="supabaseAnonKey"]')?.value.trim() || state.sync.supabaseAnonKey;
   state.sync.syncKey = screen.querySelector('[name="syncKey"]')?.value.trim() || state.sync.syncKey;
   state.ai.model = screen.querySelector('[name="openaiModel"]')?.value.trim() || state.ai.model;
   state.search.country = screen.querySelector('[name="braveCountry"]')?.value.trim() || state.search.country;

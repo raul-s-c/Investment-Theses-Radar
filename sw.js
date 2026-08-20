@@ -1,4 +1,4 @@
-const CACHE_NAME = "thesis-radar-v8";
+const CACHE_NAME = "thesis-radar-v9";
 const APP_FILES = [
   "./",
   "./index.html",
