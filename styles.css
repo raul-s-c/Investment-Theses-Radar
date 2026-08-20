@@ -685,6 +685,34 @@ meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--gre
   line-height: 1.5;
 }
 
+.source-list {
+  display: grid;
+  gap: 10px;
+}
+
+.source-list p {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.source-list p:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.source-list strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.source-list span {
+  color: var(--blue);
+  font-size: 10px;
+  word-break: break-word;
+}
+
 .button-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

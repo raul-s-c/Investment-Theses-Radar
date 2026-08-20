@@ -34,6 +34,16 @@ function defaultState() {
       model: "gpt-5.4-mini",
       lastError: "",
     },
+    search: {
+      braveApiKey: "",
+      country: "US",
+      language: "en",
+      monthlyLimit: 1000,
+      usedThisMonth: 0,
+      usageMonth: new Date().toISOString().slice(0, 7),
+      lastResultsByTicker: {},
+      lastError: "",
+    },
   };
 }
 
@@ -56,6 +66,7 @@ function mergeState(base, saved) {
     quoteStatusByTicker: { ...base.quoteStatusByTicker, ...saved.quoteStatusByTicker },
     sync: { ...base.sync, ...saved.sync },
     ai: { ...base.ai, ...saved.ai },
+    search: { ...base.search, ...saved.search },
   };
 }
 
@@ -289,13 +300,23 @@ function renderReport() {
   const asset = assetByTicker();
   if (!asset) return renderNoAsset("report");
   const report = state.reportsByTicker[asset.ticker];
+  const searchResults = state.search.lastResultsByTicker?.[asset.ticker]?.results || [];
   document.querySelector("#screen-report").innerHTML = `
     <article class="panel">
       <h2>${escapeHtml(asset.ticker)} - Informe IA</h2>
       <p>${report ? `Generado: ${escapeHtml(formatTimestamp(report.createdAt))}. Modelo: ${escapeHtml(report.model || "No indicado")}.` : "Aun no hay informe real. Introduce tu API key en Ajustes y genera uno bajo demanda."}</p>
-      <button class="wide-button" type="button" data-generate-report="${asset.ticker}">Generar informe con OpenAI</button>
+      <button class="wide-button" type="button" data-generate-report="${asset.ticker}">Generar sin web search</button>
+      <button class="wide-button ghost" type="button" data-generate-report-web="${asset.ticker}">Buscar con Brave + analizar</button>
     </article>
     ${report ? `<article class="panel report-output"><h2>Resultado</h2>${renderReportBody(report)}</article>` : `<article class="panel empty-state"><h2>Sin puntuacion</h2><p>No calculo scores simulados. El score aparecera solo si lo devuelve el informe de OpenAI.</p></article>`}
+    <article class="panel source-list">
+      <h2>Fuentes Brave</h2>
+      ${
+        searchResults.length
+          ? searchResults.map((item) => `<p><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.url)}</span>${escapeHtml(item.description || "")}</p>`).join("")
+          : "<p>No hay busqueda web guardada para este ticker.</p>"
+      }
+    </article>
   `;
 }
 
@@ -392,6 +413,18 @@ function renderSettings() {
       <label class="form-field">Modelo<input name="openaiModel" value="${escapeHtml(state.ai.model)}" /></label>
       <button class="wide-button ghost" type="button" data-save-settings>Guardar API</button>
       ${state.ai.lastError ? `<p class="bad tiny">${escapeHtml(state.ai.lastError)}</p>` : ""}
+    </article>
+    <article class="panel">
+      <h2>Brave Search</h2>
+      <p>Busquedas manuales para enriquecer informes. Cada informe con Brave consume una consulta.</p>
+      <label class="form-field">API key<input name="braveApiKey" type="password" value="${escapeHtml(state.search.braveApiKey)}" placeholder="BSA..." /></label>
+      <div class="button-grid">
+        <label class="form-field">Pais<input name="braveCountry" value="${escapeHtml(state.search.country)}" placeholder="US" /></label>
+        <label class="form-field">Idioma<input name="braveLanguage" value="${escapeHtml(state.search.language)}" placeholder="en" /></label>
+      </div>
+      <label class="form-field">Limite mensual<input name="braveMonthlyLimit" type="number" min="1" value="${escapeHtml(state.search.monthlyLimit)}" /></label>
+      <button class="wide-button ghost" type="button" data-save-settings>Guardar Brave</button>
+      <p class="muted tiny">Uso ${escapeHtml(state.search.usageMonth)}: ${state.search.usedThisMonth}/${state.search.monthlyLimit}. ${escapeHtml(state.search.lastError || "")}</p>
     </article>
     <article class="panel">
       <h2>Backup local</h2>
@@ -556,7 +589,7 @@ async function fetchYahooChartQuote(asset) {
   return { price, changePercent: previous ? ((price - previous) / previous) * 100 : null, currency: meta?.currency || asset.currency };
 }
 
-async function generateReport(ticker) {
+async function generateReport(ticker, includeWeb = false) {
   const asset = assetByTicker(ticker);
   if (!asset) return;
   if (!state.ai.apiKey) {
@@ -566,12 +599,16 @@ async function generateReport(ticker) {
   }
   showToast("Generando informe...");
   try {
+    let webContext = [];
+    if (includeWeb) {
+      webContext = await braveSearchForAsset(asset);
+    }
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.ai.apiKey}` },
       body: JSON.stringify({
         model: state.ai.model,
-        input: buildReportPrompt(asset),
+        input: buildReportPrompt(asset, webContext),
         text: {
           format: {
             type: "json_schema",
@@ -603,12 +640,13 @@ async function generateReport(ticker) {
     } catch {
       parsed = { raw: outputText };
     }
-    state.reportsByTicker[ticker] = { ...parsed, raw: parsed.raw || outputText, model: state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: false };
+    state.reportsByTicker[ticker] = { ...parsed, raw: parsed.raw || outputText, model: state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: includeWeb, sourceCount: webContext.length };
     state.ai.lastError = "";
     saveState();
     setRoute("report");
     showToast("Informe generado");
   } catch (error) {
+    if (includeWeb) state.search.lastError = error.message;
     state.ai.lastError = error.message;
     saveState();
     setRoute("settings");
@@ -616,8 +654,67 @@ async function generateReport(ticker) {
   }
 }
 
-function buildReportPrompt(asset) {
-  return `Eres un analista de inversion. No uses web search. Analiza solo los datos proporcionados y devuelve JSON valido con estas claves: score number 0-100 si hay datos suficientes, thesisStatus string, summary string, drivers array, risks array, actions array.
+async function braveSearchForAsset(asset) {
+  if (!state.search.braveApiKey) {
+    setRoute("settings");
+    throw new Error("Pega tu API key de Brave Search");
+  }
+  resetSearchUsageIfNeeded();
+  if (Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
+    throw new Error("Limite mensual de Brave alcanzado");
+  }
+  const query = buildBraveQuery(asset);
+  const url = new URL("https://api.search.brave.com/res/v1/web/search");
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", "8");
+  url.searchParams.set("country", state.search.country || "US");
+  url.searchParams.set("search_lang", state.search.language || "en");
+  url.searchParams.set("safesearch", "moderate");
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "X-Subscription-Token": state.search.braveApiKey,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.message || data?.error || `Brave HTTP ${response.status}`);
+  const results = (data.web?.results || []).slice(0, 8).map((item) => ({
+    title: item.title || "",
+    url: item.url || "",
+    description: item.description || "",
+    age: item.age || "",
+  }));
+  state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
+  state.search.lastError = "";
+  state.search.lastResultsByTicker[asset.ticker] = {
+    at: new Date().toISOString(),
+    query,
+    results,
+  };
+  saveState();
+  return results;
+}
+
+function resetSearchUsageIfNeeded() {
+  const month = new Date().toISOString().slice(0, 7);
+  if (state.search.usageMonth !== month) {
+    state.search.usageMonth = month;
+    state.search.usedThisMonth = 0;
+  }
+}
+
+function buildBraveQuery(asset) {
+  const company = asset.company || asset.ticker;
+  const base = `${asset.ticker} ${company}`;
+  return `${base} latest results dividend earnings investment thesis risks`;
+}
+
+function buildReportPrompt(asset, webContext = []) {
+  const webSection = webContext.length
+    ? webContext.map((item, index) => `${index + 1}. ${item.title}\nURL: ${item.url}\nSnippet: ${item.description}`).join("\n\n")
+    : "No se aportan resultados web. No busques por tu cuenta.";
+
+  return `Eres un analista de inversion. No uses web search propia ni herramientas externas. Analiza solo los datos proporcionados y las fuentes Brave incluidas. Devuelve JSON valido con estas claves: score number 0-100 si hay datos suficientes, thesisStatus string, summary string, drivers array, risks array, actions array.
 
 Ticker: ${asset.ticker}
 Empresa: ${asset.company || "no indicada"}
@@ -630,8 +727,10 @@ Drivers del usuario: ${JSON.stringify(asset.drivers || [])}
 Breakers del usuario: ${JSON.stringify(asset.breakers || [])}
 Riesgos del usuario: ${JSON.stringify(asset.risks || [])}
 Eventos: ${JSON.stringify(asset.events || [])}
+Fuentes Brave:
+${webSection}
 
-Si faltan datos, dilo claramente y baja la confianza. No inventes fundamentales, noticias, dividendos ni precios.`;
+Si faltan datos, dilo claramente y baja la confianza. No inventes fundamentales, noticias, dividendos ni precios. Cita en el resumen los datos de fuentes solo cuando esten en los snippets o en datos del usuario.`;
 }
 
 async function syncPush() {
@@ -660,9 +759,10 @@ async function syncPull() {
   try {
     const rows = await supabaseRequest(`user_sync_states?sync_key=eq.${encodeURIComponent(state.sync.syncKey)}&select=payload,updated_at&limit=1`);
     if (!rows.length) return showToast("No hay estado remoto");
-    const secrets = { apiKey: state.ai.apiKey, supabaseAnonKey: state.sync.supabaseAnonKey, supabaseUrl: state.sync.supabaseUrl };
+    const secrets = { apiKey: state.ai.apiKey, braveApiKey: state.search.braveApiKey, supabaseAnonKey: state.sync.supabaseAnonKey, supabaseUrl: state.sync.supabaseUrl };
     state = mergeState(defaultState(), rows[0].payload || {});
     state.ai.apiKey = secrets.apiKey;
+    state.search.braveApiKey = secrets.braveApiKey;
     state.sync.supabaseAnonKey = secrets.supabaseAnonKey;
     state.sync.supabaseUrl = secrets.supabaseUrl;
     state.sync.lastSyncAt = rows[0].updated_at;
@@ -681,6 +781,7 @@ async function syncPull() {
 function stateForCloud() {
   const clone = structuredClone(state);
   clone.ai.apiKey = "";
+  clone.search.braveApiKey = "";
   clone.sync.supabaseAnonKey = "";
   clone.sync.supabaseUrl = "";
   return clone;
@@ -715,6 +816,10 @@ function saveSettingsFromScreen() {
   state.sync.syncKey = screen.querySelector('[name="syncKey"]')?.value.trim() || state.sync.syncKey;
   state.ai.apiKey = screen.querySelector('[name="openaiKey"]')?.value.trim() ?? state.ai.apiKey;
   state.ai.model = screen.querySelector('[name="openaiModel"]')?.value.trim() || state.ai.model;
+  state.search.braveApiKey = screen.querySelector('[name="braveApiKey"]')?.value.trim() ?? state.search.braveApiKey;
+  state.search.country = screen.querySelector('[name="braveCountry"]')?.value.trim() || state.search.country;
+  state.search.language = screen.querySelector('[name="braveLanguage"]')?.value.trim() || state.search.language;
+  state.search.monthlyLimit = Number(screen.querySelector('[name="braveMonthlyLimit"]')?.value || state.search.monthlyLimit) || 1000;
   saveState();
   showToast("Ajustes guardados");
 }
@@ -795,6 +900,8 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-refresh-market]")) return refreshMarketData();
   const reportButton = event.target.closest("[data-generate-report]");
   if (reportButton) return generateReport(reportButton.dataset.generateReport);
+  const reportWebButton = event.target.closest("[data-generate-report-web]");
+  if (reportWebButton) return generateReport(reportWebButton.dataset.generateReportWeb, true);
   if (event.target.closest("[data-save-settings]")) return saveSettingsFromScreen();
   if (event.target.closest("[data-sync-push]")) {
     saveSettingsFromScreen();

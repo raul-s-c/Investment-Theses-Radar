@@ -14,6 +14,7 @@ PWA mobile-first para monitorizar portfolio y validar tesis de inversion manualm
 - Portfolio vacio por defecto: sin tickers, precios, graficos ni scores inventados.
 - Alta manual de tickers reales.
 - Informes con OpenAI bajo demanda usando la API key que pegues en Ajustes.
+- Busqueda web manual con Brave Search y analisis combinado con OpenAI.
 - Sincronizacion opcional movil/PC con Supabase en modo solo.
 - Calendario alimentado por resultados, dividendos y catalizadores editables.
 
@@ -99,4 +100,17 @@ Nota sobre el modo `solo_sync.sql`: es un puente temporal para uso personal. Usa
 - Revision automatica: fuera del MVP.
 - Revision manual: usa tesis, eventos y datos reales disponibles.
 - ChatGPT API: puedes pegarla en Ajustes para pruebas. Se guarda solo en el navegador y no se sincroniza a Supabase.
-- La app llama a OpenAI sin web search y pide al modelo no inventar fundamentales, noticias, dividendos ni precios.
+- Brave Search API: puedes pegarla en Ajustes. Cada boton `Buscar con Brave + analizar` consume una busqueda y guarda las fuentes usadas por ticker.
+- Las claves de OpenAI y Brave se guardan solo en el navegador y no se sincronizan a Supabase.
+- La app pide al modelo que no use web search propia: solo puede usar los datos del usuario y los snippets/enlaces devueltos por Brave.
+
+## Brave Search
+
+La integracion usa el endpoint oficial `https://api.search.brave.com/res/v1/web/search` con el header `X-Subscription-Token`. Parametros iniciales:
+
+- `count=8`
+- `country`: configurable, por defecto `US`
+- `search_lang`: configurable, por defecto `en`
+- `safesearch=moderate`
+
+Para produccion, mueve Brave/OpenAI a un proxy o Supabase Edge Function. Las API keys no deben vivir en cliente publico salvo pruebas personales.
