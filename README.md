@@ -15,6 +15,8 @@ PWA mobile-first para monitorizar portfolio y validar tesis de inversion manualm
 - Alta manual de tickers reales.
 - Informes con OpenAI bajo demanda desde Supabase Edge Functions.
 - Busqueda web manual con Brave Search desde Supabase y analisis combinado con OpenAI.
+- Analisis de ticker con relleno de ficha: tesis, drivers, breakers, riesgos, eventos, fundamentales e historico de precios cuando Yahoo Chart lo devuelve.
+- Discovery orientado a impacto de tesis: puede sugerir acciones, ETFs, fondos cotizados o fondos cerrados, priorizando beneficiarios/coberturas frente a coincidencias literales.
 - Sincronizacion opcional movil/PC con Supabase en modo solo.
 - Calendario alimentado por resultados, dividendos y catalizadores editables.
 

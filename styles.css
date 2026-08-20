@@ -713,6 +713,20 @@ meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--gre
   word-break: break-word;
 }
 
+.price-chart {
+  width: 100%;
+  height: 128px;
+  margin-top: 8px;
+}
+
+.price-chart polyline {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .button-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

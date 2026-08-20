@@ -108,7 +108,11 @@ Si faltan datos, dilo claramente y baja la confianza. No inventes fundamentales,
 
 function buildDiscoveryPrompt(thesis: string, sources: SearchResult[]) {
   const webSection = sources.map((item, index) => `${index + 1}. ${item.title}\nURL: ${item.url}\nSnippet: ${item.description}`).join("\n\n");
-  return `Eres un analista de inversion. Devuelve JSON valido con una clave suggestions, array de hasta 8 activos cotizados que encajen con la tesis. Incluye acciones, fondos cotizados, ETFs o fondos cerrados cuando sean relevantes; no limites la respuesta a acciones. Cada item debe tener ticker, company, sector, assetType, rationale, score number 0-100. Usa solo estas fuentes Brave y la tesis del usuario. No inventes tickers.
+  return `Eres un analista de inversion. Primero interpreta la tesis como una cadena causal economica, no como una busqueda literal de palabras. Devuelve JSON valido con una clave suggestions, array de hasta 8 activos cotizados que sean implementaciones positivas o coberturas razonables de esa tesis.
+
+Incluye acciones, fondos cotizados, ETFs o fondos cerrados cuando sean relevantes; no limites la respuesta a acciones. Prioriza activos que se beneficiarian de la tesis, no activos directamente perjudicados por ella. Si un activo aparece solo porque comparte nombre o geografia pero la tesis lo perjudica, no lo sugieras salvo que thesisRole indique claramente "evitar/impacto negativo".
+
+Cada item debe tener ticker, company, sector, assetType, thesisRole, rationale, score number 0-100. Usa solo estas fuentes Brave y la tesis del usuario. No inventes tickers.
 
 Tesis del usuario:
 ${thesis}
@@ -243,10 +247,11 @@ async function openAiDiscovery(model: string, prompt: string) {
                     company: { type: "string" },
                     sector: { type: "string" },
                     assetType: { type: "string" },
+                    thesisRole: { type: "string" },
                     rationale: { type: "string" },
                     score: { type: "number" },
                   },
-                  required: ["ticker", "company", "sector", "assetType", "rationale", "score"],
+                  required: ["ticker", "company", "sector", "assetType", "thesisRole", "rationale", "score"],
                 },
               },
             },
@@ -277,7 +282,7 @@ Deno.serve(async (request) => {
     if (body.mode === "discovery") {
       const thesis = String(body.thesis || "").trim();
       if (!thesis) return jsonResponse({ error: "Falta thesis" }, 400);
-      const web = await braveSearch(`${thesis} public companies stocks ETFs funds tickers holdings fundamentals`, body.search || {});
+      const web = await braveSearch(`${thesis} investment beneficiaries supply chain winners stocks ETFs funds tickers holdings`, body.search || {});
       const result = await openAiDiscovery(model, buildDiscoveryPrompt(thesis, web.sources));
       return jsonResponse({ ...result, sources: web.sources, query: web.query, model, usedWebSearch: true });
     }

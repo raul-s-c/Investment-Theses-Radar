@@ -26,6 +26,7 @@ function defaultState() {
     positionsByTicker: {},
     reportsByTicker: {},
     reportHistoryByTicker: {},
+    priceHistoryByTicker: {},
     quoteStatusByTicker: {},
     lastDataRefresh: null,
     sync: {
@@ -68,6 +69,7 @@ function mergeState(base, saved) {
     positionsByTicker: { ...base.positionsByTicker, ...saved.positionsByTicker },
     reportsByTicker: { ...base.reportsByTicker, ...saved.reportsByTicker },
     reportHistoryByTicker: { ...base.reportHistoryByTicker, ...saved.reportHistoryByTicker },
+    priceHistoryByTicker: { ...base.priceHistoryByTicker, ...saved.priceHistoryByTicker },
     quoteStatusByTicker: { ...base.quoteStatusByTicker, ...saved.quoteStatusByTicker },
     sync: { ...base.sync, ...saved.sync },
     ai: { ...base.ai, ...saved.ai },
@@ -206,6 +208,26 @@ function renderFundamentals(fundamentals) {
   return entries.length
     ? `<dl class="metric-list">${entries.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`
     : "<p>Sin fundamentales guardados.</p>";
+}
+
+function priceHistory(ticker = activeTicker()) {
+  return ticker ? state.priceHistoryByTicker?.[ticker] || [] : [];
+}
+
+function renderPriceChart(points = []) {
+  const valid = points.filter((point) => Number.isFinite(point.close));
+  if (valid.length < 2) return "<p>Sin historico de precios guardado.</p>";
+  const width = 300;
+  const height = 120;
+  const min = Math.min(...valid.map((point) => point.close));
+  const max = Math.max(...valid.map((point) => point.close));
+  const range = max - min || 1;
+  const coords = valid.map((point, index) => {
+    const x = (index / (valid.length - 1)) * width;
+    const y = height - ((point.close - min) / range) * height;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return `<svg class="price-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Historico de precios"><polyline points="${coords}" /></svg><p class="muted tiny">${valid.length} cierres. Min ${min.toFixed(2)} / Max ${max.toFixed(2)}.</p>`;
 }
 
 function logoText(ticker = "") {
@@ -352,7 +374,7 @@ function renderDetail() {
     </article>
     <article class="panel">
       <h2>Historico real</h2>
-      <p>No se muestra grafico hasta que exista una serie historica real guardada. Siguiente paso: guardar precios diarios en Supabase.</p>
+      ${renderPriceChart(priceHistory(asset.ticker))}
     </article>
   `;
 }
@@ -431,11 +453,16 @@ function renderHistory() {
   const asset = assetByTicker();
   if (!asset) return renderNoAsset("history");
   const history = reportHistory(asset.ticker);
+  const prices = priceHistory(asset.ticker);
   document.querySelector("#screen-history").innerHTML = `
     <article class="panel">
       <h2>Historico de tesis</h2>
       <p>${history.length ? `${history.length} informes reales guardados para ${escapeHtml(asset.ticker)}.` : "Aun no hay informes guardados para este activo."}</p>
       <button class="wide-button" type="button" data-generate-report-web="${asset.ticker}">Analizar ahora</button>
+    </article>
+    <article class="panel">
+      <h2>Precio historico</h2>
+      ${renderPriceChart(prices)}
     </article>
     <div class="calendar-list">
       ${history.length ? history.map((report) => `<button class="calendar-row" type="button" data-route="report"><span class="calendar-date">${escapeHtml(formatTimestamp(report.createdAt))}</span><span><h3>${Number.isFinite(report.score) ? `${report.score}/100` : "Sin score"}</h3><p>${escapeHtml(report.thesisStatus || report.summary || "Informe guardado")}</p></span></button>`).join("") : `<article class="panel empty-state"><h2>Sin serie</h2><p>Analiza el ticker varias veces para construir la evolucion real de la tesis.</p></article>`}
@@ -653,6 +680,15 @@ async function fetchYahooChartQuote(asset) {
   return { price, changePercent: previous ? ((price - previous) / previous) * 100 : null, currency: meta?.currency || asset.currency };
 }
 
+async function fetchYahooPriceHistory(asset, range = "1y") {
+  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(asset.ticker)}?range=${encodeURIComponent(range)}&interval=1d`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Yahoo history HTTP ${response.status}`);
+  const result = (await response.json())?.chart?.result?.[0];
+  const timestamps = result?.timestamp || [];
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  return timestamps.map((timestamp, index) => ({ date: new Date(timestamp * 1000).toISOString().slice(0, 10), close: Number(closes[index]) })).filter((point) => Number.isFinite(point.close));
+}
+
 async function generateReport(ticker, includeWeb = false) {
   const asset = assetByTicker(ticker);
   if (!asset) return;
@@ -673,12 +709,18 @@ async function generateReport(ticker, includeWeb = false) {
       state.assetsByTicker[ticker] = { ...state.assetsByTicker[ticker], price: quote.price, changePercent: quote.changePercent, currency: quote.currency || state.assetsByTicker[ticker].currency, updatedAt: new Date().toISOString() };
       state.quoteStatusByTicker[ticker] = { ok: true, source: quote.source, at: new Date().toISOString(), message: "Precio real actualizado antes del analisis" };
     }
+    try {
+      const history = await fetchYahooPriceHistory(state.assetsByTicker[ticker]);
+      if (history.length) state.priceHistoryByTicker[ticker] = history;
+    } catch {
+      state.priceHistoryByTicker[ticker] = state.priceHistoryByTicker[ticker] || [];
+    }
     const data = await invokeAnalyzeThesis(state.assetsByTicker[ticker], true);
     const report = data.report || {};
     const raw = typeof report.raw === "string" ? report.raw : JSON.stringify(report, null, 2);
     const sources = Array.isArray(data.sources) ? data.sources : [];
     const savedReport = { ...report, raw, model: data.model || state.ai.model, createdAt: new Date().toISOString(), usedWebSearch: true, sourceCount: sources.length };
-    applyAssetPatch(ticker, data.assetPatch || {});
+    applyAssetPatch(ticker, data.assetPatch || report.assetPatch || {});
     state.reportsByTicker[ticker] = savedReport;
     state.reportHistoryByTicker[ticker] = [savedReport, ...reportHistory(ticker)].slice(0, 50);
     state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
@@ -780,7 +822,7 @@ function renderDiscoveryResults(suggestions) {
   const box = document.querySelector("#discoveryResults");
   if (!box) return;
   box.innerHTML = suggestions.length
-    ? suggestions.map((item) => `<article class="asset-row"><button class="asset-main" type="button" data-add-suggestion="${escapeHtml(item.ticker || "")}" data-company="${escapeHtml(item.company || "")}" data-sector="${escapeHtml(item.sector || item.assetType || "")}" data-thesis="${escapeHtml(item.rationale || "")}"><span class="logo-mark">${logoText(item.ticker || "")}</span><span><h3>${escapeHtml(item.ticker || "")}</h3><p>${escapeHtml(item.assetType || item.sector || "Activo")} - ${escapeHtml(item.company || "")}<br>${escapeHtml(item.rationale || "")}</p></span><span class="asset-price"><strong>${escapeHtml(String(item.score || ""))}</strong><p>score</p></span></button></article>`).join("")
+    ? suggestions.map((item) => `<article class="asset-row"><button class="asset-main" type="button" data-add-suggestion="${escapeHtml(item.ticker || "")}" data-company="${escapeHtml(item.company || "")}" data-sector="${escapeHtml(item.sector || item.assetType || "")}" data-thesis="${escapeHtml(`${item.thesisRole || item.assetType || "activo"}: ${item.rationale || ""}`)}"><span class="logo-mark">${logoText(item.ticker || "")}</span><span><h3>${escapeHtml(item.ticker || "")}</h3><p>${escapeHtml(item.assetType || item.sector || "Activo")} - ${escapeHtml(item.thesisRole || "encaje")}<br>${escapeHtml(item.rationale || "")}</p></span><span class="asset-price"><strong>${escapeHtml(String(item.score || ""))}</strong><p>score</p></span></button></article>`).join("")
     : `<article class="panel empty-state"><h2>Sin resultados</h2><p>La API no devolvio candidatos utilizables.</p></article>`;
 }
 
