@@ -11,6 +11,12 @@ type SearchResult = {
   age: string;
 };
 
+type MarketData = {
+  quote: Record<string, unknown>;
+  history: Array<{ date: string; close: number }>;
+  fundamentals: Array<{ label: string; value: string }>;
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return Response.json(body, {
     status,
@@ -73,7 +79,57 @@ async function braveSearch(queryOrAsset: string | Record<string, unknown>, searc
   return { query, sources };
 }
 
-function buildPrompt(asset: Record<string, unknown>, position: Record<string, unknown>, sources: SearchResult[]) {
+async function fetchYahooSearch(ticker: string) {
+  try {
+    const url = new URL("https://query1.finance.yahoo.com/v1/finance/search");
+    url.searchParams.set("q", ticker);
+    url.searchParams.set("quotesCount", "5");
+    url.searchParams.set("newsCount", "0");
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.quotes?.[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchYahooMarketData(asset: Record<string, unknown>): Promise<MarketData> {
+  const ticker = String(asset.ticker || "").trim();
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`;
+  const [chartResponse, search] = await Promise.all([fetch(url), fetchYahooSearch(ticker)]);
+  if (!chartResponse.ok) throw new Error(`Yahoo Chart HTTP ${chartResponse.status}`);
+  const chart = (await chartResponse.json())?.chart?.result?.[0];
+  const meta = chart?.meta || {};
+  const timestamps = chart?.timestamp || [];
+  const closes = chart?.indicators?.quote?.[0]?.close || [];
+  const history = timestamps
+    .map((timestamp: number, index: number) => ({ date: new Date(timestamp * 1000).toISOString().slice(0, 10), close: Number(closes[index]) }))
+    .filter((point: { close: number }) => Number.isFinite(point.close));
+  const price = Number(meta.regularMarketPrice || history.at(-1)?.close);
+  const previous = Number(history.at(-2)?.close || meta.chartPreviousClose || price);
+  const quote = {
+    ticker,
+    company: search?.longname || search?.shortname || asset.company || "",
+    sector: search?.sector || asset.sector || "",
+    assetType: search?.quoteType || "",
+    exchange: search?.exchange || meta.exchangeName || "",
+    currency: meta.currency || asset.currency || "",
+    price,
+    changePercent: previous ? ((price - previous) / previous) * 100 : null,
+    source: "Yahoo Chart",
+  };
+  const fundamentals = [
+    search?.quoteType ? { label: "Tipo de activo", value: String(search.quoteType) } : null,
+    search?.exchange ? { label: "Bolsa", value: String(search.exchange) } : null,
+    meta.currency ? { label: "Moneda", value: String(meta.currency) } : null,
+    Number.isFinite(price) ? { label: "Precio actual", value: String(price) } : null,
+    history.length ? { label: "Historico Yahoo", value: `${history.length} cierres diarios` } : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+  return { quote, history, fundamentals };
+}
+
+function buildPrompt(asset: Record<string, unknown>, position: Record<string, unknown>, sources: SearchResult[], marketData: MarketData | null) {
   const webSection = sources.length
     ? sources.map((item, index) => `${index + 1}. ${item.title}\nURL: ${item.url}\nSnippet: ${item.description}`).join("\n\n")
     : "No se aportan resultados web. No busques por tu cuenta.";
@@ -95,6 +151,7 @@ Sector: ${asset.sector || "no indicado"}
 Precio disponible: ${asset.price || "no indicado"} ${asset.currency || ""}
 Cambio: ${asset.changePercent || "no indicado"}
 Posicion: ${JSON.stringify(position || {})}
+Datos Yahoo/mercado: ${JSON.stringify(marketData || {})}
 Tesis del usuario: ${asset.thesis || "no indicada"}
 Drivers del usuario: ${JSON.stringify(asset.drivers || [])}
 Breakers del usuario: ${JSON.stringify(asset.breakers || [])}
@@ -103,7 +160,7 @@ Eventos: ${JSON.stringify(asset.events || [])}
 Fuentes Brave:
 ${webSection}
 
-Si faltan datos, dilo claramente y baja la confianza. No inventes fundamentales, noticias, dividendos, resultados ni precios. Cita fuentes solo cuando esten en los snippets o en datos del usuario.`;
+Si faltan datos, dilo claramente y baja la confianza, pero rellena assetPatch con todos los datos verificables disponibles en Datos Yahoo/mercado y Fuentes Brave. No inventes deuda, caja, crecimiento, guia ni valoracion: si no aparecen, incluyelos en risks/actions como datos pendientes. Cita fuentes solo cuando esten en snippets, datos Yahoo/mercado o datos del usuario.`;
 }
 
 function buildDiscoveryPrompt(thesis: string, sources: SearchResult[]) {
@@ -290,14 +347,27 @@ Deno.serve(async (request) => {
     const asset = body.asset || {};
     if (!asset.ticker) return jsonResponse({ error: "Falta asset.ticker" }, 400);
 
-    const web = await braveSearch(asset, body.search || {});
-    const prompt = buildPrompt(asset, body.position || {}, web.sources);
+    const marketData = await fetchYahooMarketData(asset);
+    if (body.mode === "market") return jsonResponse({ marketData });
+
+    const enrichedAsset = { ...asset, ...marketData.quote };
+    const ticker = String(enrichedAsset.ticker || asset.ticker || "");
+    const company = String(enrichedAsset.company || ticker);
+    const queries = [
+      buildBraveQuery(enrichedAsset),
+      `${ticker} ${company} valuation debt cash revenue growth guidance latest quarterly results`,
+      `${ticker} ${company} dividend earnings calendar next results balance sheet free cash flow`,
+    ];
+    const webParts = await Promise.all(queries.map((query) => braveSearch(query, { ...(body.search || {}), count: 5 })));
+    const sources = webParts.flatMap((part) => part.sources).filter((source, index, all) => source.url && all.findIndex((item) => item.url === source.url) === index).slice(0, 12);
+    const prompt = buildPrompt(enrichedAsset, body.position || {}, sources, marketData);
     const report = await openAiReport(model, prompt);
 
     return jsonResponse({
       report,
-      sources: web.sources,
-      query: web.query,
+      marketData,
+      sources,
+      query: queries.join(" | "),
       model,
       usedWebSearch: Boolean(body.includeWeb),
     });

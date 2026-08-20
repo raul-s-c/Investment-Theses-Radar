@@ -6,11 +6,6 @@ const APP_CONFIG = {
 
 const routes = ["watchlist", "detail", "report", "thesis", "history", "add", "discovery", "settings"];
 const routeHistory = ["watchlist"];
-const DATA_SOURCES = [
-  { id: "stooq", label: "Stooq CSV" },
-  { id: "yahoo-chart", label: "Yahoo chart" },
-];
-
 const screenTitle = document.querySelector("#screenTitle");
 const screenSubtitle = document.querySelector("#screenSubtitle");
 const backButton = document.querySelector("#backButton");
@@ -620,73 +615,24 @@ async function refreshMarketData(ticker = null) {
   const assets = ticker ? [assetByTicker(ticker)].filter(Boolean) : portfolioAssets();
   if (!assets.length) return showToast("No hay activos que actualizar");
   showToast("Actualizando precios reales...");
-  const results = await Promise.all(assets.map((asset) => fetchMarketQuote(asset)));
-  results.forEach(({ asset, quote, error }) => {
-    if (quote) {
-      state.assetsByTicker[asset.ticker] = { ...asset, price: quote.price, changePercent: quote.changePercent, currency: quote.currency || asset.currency, updatedAt: new Date().toISOString() };
-      state.quoteStatusByTicker[asset.ticker] = { ok: true, source: quote.source, at: new Date().toISOString(), message: "Precio real actualizado" };
+  const results = await Promise.all(assets.map(async (asset) => {
+    try {
+      return { asset, marketData: await invokeMarketData(asset) };
+    } catch (error) {
+      return { asset, error: error.message };
+    }
+  }));
+  results.forEach(({ asset, marketData, error }) => {
+    if (marketData) {
+      applyMarketData(asset.ticker, marketData);
     } else {
-      state.quoteStatusByTicker[asset.ticker] = { ok: false, source: "Stooq/Yahoo", at: new Date().toISOString(), message: error || "Fuente no disponible desde navegador" };
+      state.quoteStatusByTicker[asset.ticker] = { ok: false, source: "Supabase/Yahoo", at: new Date().toISOString(), message: error || "Fuente no disponible" };
     }
   });
   state.lastDataRefresh = new Date().toISOString();
   saveState();
   setRoute(document.querySelector(".screen.is-active").id.replace("screen-", ""), false);
   showToast(`${results.filter((item) => item.quote).length}/${results.length} precios actualizados`);
-}
-
-async function fetchMarketQuote(asset) {
-  for (const source of DATA_SOURCES) {
-    try {
-      const quote = source.id === "stooq" ? await fetchStooqQuote(asset) : await fetchYahooChartQuote(asset);
-      if (quote) return { asset, quote: { ...quote, source: source.label } };
-    } catch (error) {
-      if (source.id === DATA_SOURCES.at(-1).id) return { asset, error: error.message };
-    }
-  }
-  return { asset, error: "Sin datos para este ticker" };
-}
-
-function stooqSymbol(ticker) {
-  const normalized = ticker.toLowerCase();
-  const replacements = [[/\.hk$/, ".hk"], [/\.si$/, ".sg"], [/\.ss$/, ".cn"], [/\.sz$/, ".cn"], [/\.ks$/, ".kr"], [/\.as$/, ".nl"]];
-  const [pattern, suffix] = replacements.find(([pattern]) => pattern.test(normalized)) || [];
-  if (pattern) return normalized.replace(pattern, suffix);
-  if (!normalized.includes(".")) return `${normalized}.us`;
-  return normalized;
-}
-
-async function fetchStooqQuote(asset) {
-  const response = await fetch(`https://stooq.com/q/l/?s=${encodeURIComponent(stooqSymbol(asset.ticker))}&f=sd2t2c&e=csv`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Stooq HTTP ${response.status}`);
-  const [, row] = (await response.text()).trim().split(/\r?\n/);
-  if (!row || row.includes("N/D")) return null;
-  const [, , , close] = row.split(",");
-  const price = Number(close);
-  if (!Number.isFinite(price)) return null;
-  const previous = Number(asset.price) || price;
-  return { price, changePercent: previous ? ((price - previous) / previous) * 100 : null, currency: asset.currency };
-}
-
-async function fetchYahooChartQuote(asset) {
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(asset.ticker)}?range=5d&interval=1d`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Yahoo HTTP ${response.status}`);
-  const result = (await response.json())?.chart?.result?.[0];
-  const meta = result?.meta;
-  const closes = (result?.indicators?.quote?.[0]?.close || []).filter((value) => Number.isFinite(value));
-  const price = Number(meta?.regularMarketPrice || closes.at(-1));
-  if (!Number.isFinite(price)) return null;
-  const previous = Number(closes.at(-2) || meta?.chartPreviousClose || asset.price || price);
-  return { price, changePercent: previous ? ((price - previous) / previous) * 100 : null, currency: meta?.currency || asset.currency };
-}
-
-async function fetchYahooPriceHistory(asset, range = "1y") {
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(asset.ticker)}?range=${encodeURIComponent(range)}&interval=1d`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Yahoo history HTTP ${response.status}`);
-  const result = (await response.json())?.chart?.result?.[0];
-  const timestamps = result?.timestamp || [];
-  const closes = result?.indicators?.quote?.[0]?.close || [];
-  return timestamps.map((timestamp, index) => ({ date: new Date(timestamp * 1000).toISOString().slice(0, 10), close: Number(closes[index]) })).filter((point) => Number.isFinite(point.close));
 }
 
 async function generateReport(ticker, includeWeb = false) {
@@ -703,19 +649,8 @@ async function generateReport(ticker, includeWeb = false) {
     if (Number(state.search.usedThisMonth) >= Number(state.search.monthlyLimit)) {
       throw new Error("Limite mensual de Brave alcanzado");
     }
-    const quoteResult = await fetchMarketQuote(asset);
-    if (quoteResult.quote) {
-      const quote = quoteResult.quote;
-      state.assetsByTicker[ticker] = { ...state.assetsByTicker[ticker], price: quote.price, changePercent: quote.changePercent, currency: quote.currency || state.assetsByTicker[ticker].currency, updatedAt: new Date().toISOString() };
-      state.quoteStatusByTicker[ticker] = { ok: true, source: quote.source, at: new Date().toISOString(), message: "Precio real actualizado antes del analisis" };
-    }
-    try {
-      const history = await fetchYahooPriceHistory(state.assetsByTicker[ticker]);
-      if (history.length) state.priceHistoryByTicker[ticker] = history;
-    } catch {
-      state.priceHistoryByTicker[ticker] = state.priceHistoryByTicker[ticker] || [];
-    }
     const data = await invokeAnalyzeThesis(state.assetsByTicker[ticker], true);
+    if (data.marketData) applyMarketData(ticker, data.marketData);
     const report = data.report || {};
     const raw = typeof report.raw === "string" ? report.raw : JSON.stringify(report, null, 2);
     const sources = Array.isArray(data.sources) ? data.sources : [];
@@ -743,10 +678,38 @@ async function generateReport(ticker, includeWeb = false) {
   }
 }
 
+function applyMarketData(ticker, marketData = {}) {
+  const quote = marketData.quote || {};
+  const asset = state.assetsByTicker[ticker];
+  if (!asset) return;
+  state.assetsByTicker[ticker] = {
+    ...asset,
+    company: quote.company || asset.company,
+    sector: quote.sector || asset.sector,
+    currency: quote.currency || asset.currency,
+    price: Number.isFinite(Number(quote.price)) ? Number(quote.price) : asset.price,
+    changePercent: Number.isFinite(Number(quote.changePercent)) ? Number(quote.changePercent) : asset.changePercent,
+    fundamentals: mergeFundamentals(asset.fundamentals, marketData.fundamentals || []),
+    updatedAt: new Date().toISOString(),
+  };
+  if (Array.isArray(marketData.history) && marketData.history.length) state.priceHistoryByTicker[ticker] = marketData.history;
+  state.quoteStatusByTicker[ticker] = { ok: true, source: quote.source || "Supabase/Yahoo", at: new Date().toISOString(), message: "Datos de mercado actualizados" };
+}
+
+function mergeFundamentals(existing = [], incoming = []) {
+  const map = new Map();
+  [...existing, ...incoming].forEach((item) => {
+    const label = String(item?.label || "").trim();
+    const value = String(item?.value || "").trim();
+    if (label && value) map.set(label, { label, value });
+  });
+  return [...map.values()];
+}
+
 function applyAssetPatch(ticker, patch = {}) {
   const asset = state.assetsByTicker[ticker];
   if (!asset) return;
-  const fundamentals = Array.isArray(patch.fundamentals) && patch.fundamentals.length ? patch.fundamentals : asset.fundamentals || [];
+  const fundamentals = mergeFundamentals(asset.fundamentals, patch.fundamentals || []);
   state.assetsByTicker[ticker] = {
     ...asset,
     company: patch.company || asset.company,
@@ -784,6 +747,18 @@ async function invokeAnalyzeThesis(asset, includeWeb) {
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data?.error || data?.message || `Supabase Function HTTP ${response.status}`);
   return data;
+}
+
+async function invokeMarketData(asset) {
+  const response = await fetch(`${supabaseUrl()}/functions/v1/analyze-thesis`, {
+    method: "POST",
+    headers: supabaseHeaders(),
+    body: JSON.stringify({ mode: "market", asset }),
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) throw new Error(data?.error || data?.message || `Supabase Function HTTP ${response.status}`);
+  return data.marketData;
 }
 
 async function discoverAssets() {
