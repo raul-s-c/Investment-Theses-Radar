@@ -243,7 +243,11 @@ Eventos: ${JSON.stringify(asset.events || [])}
 Fuentes Brave:
 ${webSection}
 
-Si Datos Yahoo/mercado incluye precio o cambio porcentual, NO digas que falta precio o cambio. Si incluye technicals, incluye analisis tecnico en summary/drivers/risks y copia esos technicals a assetPatch.fundamentals. Si faltan deuda, caja, crecimiento, guia, valoracion o dividendos, primero intenta extraerlos de Fuentes Brave; solo si no aparecen, incluyelos como datos pendientes en actions. Cita fuentes solo cuando esten en snippets, datos Yahoo/mercado o datos del usuario.`;
+Si Datos Yahoo/mercado incluye precio o cambio porcentual, NO digas que falta precio o cambio. Si incluye technicals, incluye analisis tecnico en summary/drivers/risks y copia esos technicals a assetPatch.fundamentals.
+
+Debes cubrir explicitamente estas secciones en el analisis si hay evidencia: valoracion, deuda/caja/balance, flujo de caja, crecimiento, sostenibilidad del crecimiento, guidance/outlook, dividendos/eventos y lectura tecnica. Si una seccion no aparece tras las busquedas especificas, escribe "no encontrado en fuentes aportadas" y propon una accion concreta; no digas simplemente que no se puede analizar sin mas datos.
+
+Si la tesis del usuario menciona un enfoque concreto, por ejemplo IA conservadora, disrupcion logistica, regulacion, ciclo de tipos o cualquier otro driver, analiza ese driver con las fuentes aportadas y marca como pendiente solo la evidencia que no aparezca. Cita fuentes solo cuando esten en snippets, datos Yahoo/mercado o datos del usuario.`;
 }
 
 function buildDiscoveryPrompt(thesis: string, sources: SearchResult[]) {
@@ -436,14 +440,20 @@ Deno.serve(async (request) => {
     const enrichedAsset = { ...asset, ...marketData.quote };
     const ticker = String(enrichedAsset.ticker || asset.ticker || "");
     const company = String(enrichedAsset.company || ticker);
+    const thesis = String(enrichedAsset.thesis || asset.thesis || "").trim();
     const queries = [
       buildBraveQuery(enrichedAsset),
-      `${ticker} ${company} valuation PE ratio EV EBITDA debt cash revenue growth guidance latest quarterly results`,
-      `${ticker} ${company} dividend yield payout earnings calendar next results balance sheet free cash flow`,
+      `${ticker} ${company} valuation PE ratio EV EBITDA market cap price sales analyst valuation`,
+      `${ticker} ${company} balance sheet total debt net debt cash liquidity financial position`,
+      `${ticker} ${company} cash flow operating cash flow free cash flow capex cash conversion`,
+      `${ticker} ${company} revenue growth margin growth sustainability backlog orders guidance outlook`,
+      `${ticker} ${company} dividend yield payout dividend history ex dividend earnings calendar next results`,
       `${ticker} ${company} stock technical analysis moving average RSI 52 week high low`,
+      thesis ? `${ticker} ${company} ${thesis} impact strategy outlook risks` : "",
     ];
-    const webParts = await Promise.all(queries.map((query) => braveSearch(query, { ...(body.search || {}), count: 5 })));
-    const sources = webParts.flatMap((part) => part.sources).filter((source, index, all) => source.url && all.findIndex((item) => item.url === source.url) === index).slice(0, 12);
+    const activeQueries = queries.filter(Boolean);
+    const webParts = await Promise.all(activeQueries.map((query) => braveSearch(query, { ...(body.search || {}), count: 4 })));
+    const sources = webParts.flatMap((part) => part.sources).filter((source, index, all) => source.url && all.findIndex((item) => item.url === source.url) === index).slice(0, 18);
     const prompt = buildPrompt(enrichedAsset, body.position || {}, sources, marketData);
     const report = await openAiReport(model, prompt);
 
@@ -451,9 +461,10 @@ Deno.serve(async (request) => {
       report,
       marketData,
       sources,
-      query: queries.join(" | "),
+      query: activeQueries.join(" | "),
       model,
       usedWebSearch: Boolean(body.includeWeb),
+      usage: { braveQueries: activeQueries.length },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido";

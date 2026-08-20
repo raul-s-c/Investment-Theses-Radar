@@ -658,7 +658,7 @@ async function generateReport(ticker, includeWeb = false) {
     applyAssetPatch(ticker, data.assetPatch || report.assetPatch || {});
     state.reportsByTicker[ticker] = savedReport;
     state.reportHistoryByTicker[ticker] = [savedReport, ...reportHistory(ticker)].slice(0, 50);
-    state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
+    state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + Number(data.usage?.braveQueries || 1);
     state.search.lastResultsByTicker[ticker] = {
       at: new Date().toISOString(),
       query: data.query || buildBraveQuery(asset),
