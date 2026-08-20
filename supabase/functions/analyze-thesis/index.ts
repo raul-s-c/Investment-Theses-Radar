@@ -18,6 +18,11 @@ type MarketData = {
   technicals: Array<{ label: string; value: string }>;
 };
 
+const yahooHeaders = {
+  Accept: "application/json,text/plain,*/*",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/121 Safari/537.36",
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return Response.json(body, {
     status,
@@ -86,7 +91,7 @@ async function fetchYahooSearch(ticker: string) {
     url.searchParams.set("q", ticker);
     url.searchParams.set("quotesCount", "5");
     url.searchParams.set("newsCount", "0");
-    const response = await fetch(url);
+    const response = await fetch(url, { headers: yahooHeaders });
     if (!response.ok) return null;
     const data = await response.json();
     return data.quotes?.[0] || null;
@@ -167,7 +172,7 @@ async function fetchYahooMarketData(asset: Record<string, unknown>): Promise<Mar
   let resolvedTicker = rawTicker;
   for (const candidate of yahooTickerCandidates(rawTicker)) {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(candidate)}?range=1y&interval=1d`;
-    const chartResponse = await fetch(url);
+    const chartResponse = await fetch(url, { headers: yahooHeaders });
     if (!chartResponse.ok) continue;
     const result = (await chartResponse.json())?.chart?.result?.[0];
     const timestamps = result?.timestamp || [];
@@ -179,7 +184,21 @@ async function fetchYahooMarketData(asset: Record<string, unknown>): Promise<Mar
       break;
     }
   }
-  if (!chart) throw new Error(`Yahoo Chart sin datos para ${rawTicker}`);
+  if (!chart) {
+    return {
+      quote: {
+        ticker: rawTicker,
+        company: asset.company || "",
+        sector: asset.sector || "",
+        currency: asset.currency || "",
+        source: "Yahoo Chart",
+        status: `Sin historico/precio para ${rawTicker}`,
+      },
+      history: [],
+      fundamentals: [{ label: "Precio/Historico", value: `No encontrado para ${rawTicker}` }],
+      technicals: [],
+    };
+  }
   const meta = chart?.meta || {};
   const timestamps = chart?.timestamp || [];
   const closes = chart?.indicators?.quote?.[0]?.close || [];
