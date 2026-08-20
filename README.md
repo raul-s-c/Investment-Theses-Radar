@@ -52,6 +52,30 @@ yfinance / yahoo-finance2 en una accion/proxy propio
 
 Esto evita APIs financieras de pago y evita llamadas directas desde el navegador a Yahoo, que suelen fallar por CORS o limites.
 
+## Sincronizacion y cache comunitaria
+
+De momento no hace falta crear una base de datos. La app funciona con `localStorage`, pero el proyecto queda preparado para Supabase con el esquema de `supabase/schema.sql`.
+
+Objetivo futuro:
+
+- Sincronizar portfolio entre movil y PC sin repetir configuracion.
+- Guardar cache diaria por ticker para reutilizar precios, eventos y fundamentales.
+- Evitar gasto duplicado de tokens: si una tesis/ticker ya se reviso hoy con el mismo input, se reutiliza el resultado.
+- Mantener interes agregado semi-anonimo: numero de instalaciones que siguen una empresa, sin exponer posiciones personales.
+- Dejar usuarios reales para mas adelante. Primero puede funcionar con una `installation_key` local anonima.
+
+Separacion de datos prevista:
+
+- Privado: portfolio, posiciones, tesis propias, coste medio y notas.
+- Compartible: cache diaria de ticker, eventos publicos, fundamentals normalizados, conteo agregado de seguidores.
+- IA: revisiones cacheadas por `ticker + fecha + hash del input`, sin web search salvo accion explicita.
+
+Cuando activemos Supabase, GitHub Pages no debe guardar claves privadas. Opciones seguras:
+
+- Cliente Supabase con anon key y RLS bien definido para datos publicos/agregados.
+- Mini API/proxy para operaciones privadas, llamadas a OpenAI y jobs de datos.
+- Service role solo en servidor o GitHub Actions, nunca en el navegador.
+
 ## Politica de coste IA
 
 - `web search`: desactivado por defecto.
