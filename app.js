@@ -98,6 +98,22 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 
+function errorMessage(error, fallback = "Error desconocido") {
+  if (!error) return fallback;
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message || fallback;
+  if (typeof error === "object") {
+    if (typeof error.message === "string") return error.message;
+    if (typeof error.error === "string") return error.error;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(error);
+}
+
 function maskKey(value = "") {
   if (!value) return "";
   if (value.length <= 14) return "********";
@@ -511,7 +527,7 @@ function renderSettings() {
       <p>OpenAI se ejecuta en Supabase Edge Functions. La clave privada va en secrets de Supabase, no en esta app.</p>
       <label class="form-field">Modelo<input name="openaiModel" value="${escapeHtml(state.ai.model)}" /></label>
       <button class="wide-button ghost" type="button" data-save-settings>Guardar modelo</button>
-      ${state.ai.lastError ? `<p class="bad tiny">${escapeHtml(state.ai.lastError)}</p>` : ""}
+      ${state.ai.lastError ? `<p class="bad tiny">${escapeHtml(errorMessage(state.ai.lastError))}</p>` : ""}
     </article>
     <article class="panel">
       <h2>Brave Search</h2>
@@ -522,7 +538,7 @@ function renderSettings() {
       </div>
       <label class="form-field">Limite mensual<input name="braveMonthlyLimit" type="number" min="1" value="${escapeHtml(state.search.monthlyLimit)}" /></label>
       <button class="wide-button ghost" type="button" data-save-settings>Guardar Brave</button>
-      <p class="muted tiny">Uso ${escapeHtml(state.search.usageMonth)}: ${state.search.usedThisMonth}/${state.search.monthlyLimit}. ${escapeHtml(state.search.lastError || "")}</p>
+      <p class="muted tiny">Uso ${escapeHtml(state.search.usageMonth)}: ${state.search.usedThisMonth}/${state.search.monthlyLimit}. ${escapeHtml(errorMessage(state.search.lastError, ""))}</p>
     </article>
     <article class="panel">
       <h2>Backup local</h2>
@@ -630,7 +646,7 @@ async function refreshMarketData(ticker = null) {
     try {
       return { asset, marketData: await invokeMarketData(asset) };
     } catch (error) {
-      return { asset, error: error.message };
+      return { asset, error: errorMessage(error) };
     }
   }));
   results.forEach(({ asset, marketData, error }) => {
@@ -681,12 +697,13 @@ async function generateReport(ticker, includeWeb = false, options = {}) {
     setRoute(options.stayOnRoute || "report");
     if (!options.quiet) showToast("Informe generado");
   } catch (error) {
-    state.search.lastError = error.message;
-    state.ai.lastError = error.message;
+    const message = errorMessage(error);
+    state.search.lastError = message;
+    state.ai.lastError = message;
     saveState();
     if (!options.quiet) {
       setRoute("settings");
-      showToast("Error OpenAI");
+      showToast(message);
     }
   }
 }
@@ -740,6 +757,15 @@ function applyAssetPatch(ticker, patch = {}) {
   };
 }
 
+function parseResponseBody(text) {
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 async function invokeAnalyzeThesis(asset, includeWeb) {
   const response = await fetch(`${supabaseUrl()}/functions/v1/analyze-thesis`, {
     method: "POST",
@@ -757,8 +783,8 @@ async function invokeAnalyzeThesis(asset, includeWeb) {
     }),
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) throw new Error(data?.error || data?.message || `Supabase Function HTTP ${response.status}`);
+  const data = parseResponseBody(text);
+  if (!response.ok) throw new Error(errorMessage(data?.error || data?.message, `Supabase Function HTTP ${response.status}`));
   return data;
 }
 
@@ -769,8 +795,8 @@ async function invokeMarketData(asset) {
     body: JSON.stringify({ mode: "market", asset }),
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) throw new Error(data?.error || data?.message || `Supabase Function HTTP ${response.status}`);
+  const data = parseResponseBody(text);
+  if (!response.ok) throw new Error(errorMessage(data?.error || data?.message, `Supabase Function HTTP ${response.status}`));
   return data.marketData;
 }
 
@@ -793,8 +819,8 @@ async function discoverAssets() {
       }),
     });
     const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
-    if (!response.ok) throw new Error(data?.error || `Supabase Function HTTP ${response.status}`);
+    const data = parseResponseBody(text);
+    if (!response.ok) throw new Error(errorMessage(data?.error || data?.message, `Supabase Function HTTP ${response.status}`));
     state.search.usedThisMonth = Number(state.search.usedThisMonth || 0) + 1;
     const batch = {
       id: crypto.randomUUID(),
@@ -811,9 +837,10 @@ async function discoverAssets() {
     renderDiscoveryResults(batch.suggestions);
     showToast("Discovery listo");
   } catch (error) {
-    state.ai.lastError = error.message;
+    const message = errorMessage(error);
+    state.ai.lastError = message;
     saveState();
-    showToast("Error Discovery");
+    showToast(message);
   }
 }
 
@@ -911,10 +938,11 @@ async function syncPush() {
     setRoute("settings", false);
     showToast("Sincronizado");
   } catch (error) {
-    state.sync.status = error.message;
+    const message = errorMessage(error);
+    state.sync.status = message;
     saveState();
     setRoute("settings", false);
-    showToast("Error Supabase");
+    showToast(message);
   }
 }
 
@@ -933,10 +961,11 @@ async function syncPull() {
     setRoute("watchlist");
     showToast("Estado descargado");
   } catch (error) {
-    state.sync.status = error.message;
+    const message = errorMessage(error);
+    state.sync.status = message;
     saveState();
     setRoute("settings", false);
-    showToast("Error Supabase");
+    showToast(message);
   }
 }
 
@@ -971,8 +1000,8 @@ async function supabaseRequest(path, options = {}) {
     body: options.body,
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new Error(data?.message || data?.error || `Supabase HTTP ${response.status}`);
+  const data = parseResponseBody(text);
+  if (!response.ok) throw new Error(errorMessage(data?.message || data?.error, `Supabase HTTP ${response.status}`));
   return data || [];
 }
 
