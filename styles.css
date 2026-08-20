@@ -244,6 +244,42 @@ h2, .block-heading {
   text-align: left;
 }
 
+.asset-row-action {
+  position: relative;
+  display: block;
+  padding: 0;
+}
+
+.asset-main {
+  width: 100%;
+  min-height: 70px;
+  padding: 10px 34px 10px 10px;
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.remove-mini {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 77, 90, 0.24);
+  border-radius: 7px;
+  color: var(--red);
+  background: rgba(255, 77, 90, 0.08);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .asset-row h3, .asset-hero h2 {
   margin: 0;
   font-size: 14px;
@@ -452,6 +488,47 @@ h2, .block-heading {
   align-items: flex-start;
 }
 
+.calendar-list {
+  display: grid;
+  gap: 9px;
+}
+
+.calendar-row {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 54px 1fr 34px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: inherit;
+  background: linear-gradient(180deg, rgba(14, 44, 59, 0.88), rgba(8, 31, 43, 0.86));
+  text-align: left;
+}
+
+.calendar-row h3 {
+  margin: 0 0 3px;
+  font-size: 13px;
+}
+
+.calendar-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-date {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border-radius: 8px;
+  color: var(--blue);
+  background: rgba(57, 189, 248, 0.1);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .report-card {
   display: flex;
   justify-content: space-between;
@@ -553,6 +630,88 @@ meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--gre
 .toast.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 10, 15, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.modal-card {
+  width: min(390px, 100%);
+  max-height: min(780px, calc(100dvh - 36px));
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #092838, #041922);
+  box-shadow: var(--shadow);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.form-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: #dff8ff;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.form-field input,
+.form-field textarea,
+.backup-box {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text);
+  background: rgba(3, 20, 28, 0.72);
+  font-size: 12px;
+}
+
+.form-field textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.form-field small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.backup-box {
+  min-height: 120px;
+  margin: 10px 0;
+  resize: vertical;
+}
+
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.danger-action {
+  color: var(--red) !important;
+  border-color: rgba(255, 77, 90, 0.28) !important;
 }
 
 .step-card {

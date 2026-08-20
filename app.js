@@ -1,4 +1,4 @@
-const STORAGE_KEY = "thesis-radar-state-v2";
+const STORAGE_KEY = "thesis-radar-state-v3";
 
 const catalog = [
   {
@@ -195,7 +195,7 @@ const catalog = [
   },
 ];
 
-const routes = ["watchlist", "detail", "report", "thesis", "history", "add", "discovery", "settings"];
+const routes = ["watchlist", "detail", "report", "thesis", "history", "calendar", "add", "discovery", "settings"];
 const routeHistory = ["watchlist"];
 const screenTitle = document.querySelector("#screenTitle");
 const screenSubtitle = document.querySelector("#screenSubtitle");
@@ -213,9 +213,28 @@ function loadState() {
     portfolio: ["0388.HK", "D05.SI", "M44U.SI"],
     selectedTicker: "0388.HK",
     lastReviewByTicker: {},
+    overridesByTicker: {},
+    positionByTicker: {
+      "0388.HK": { shares: 12, averageCost: 365 },
+      "D05.SI": { shares: 60, averageCost: 68 },
+      "M44U.SI": { shares: 1200, averageCost: 1.12 },
+    },
+    settings: {
+      webSearch: false,
+      autoReviews: false,
+      dataSource: "Local cache / Yahoo-ready",
+    },
   };
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem(STORAGE_KEY)) };
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    return {
+      ...fallback,
+      ...stored,
+      lastReviewByTicker: { ...fallback.lastReviewByTicker, ...stored.lastReviewByTicker },
+      overridesByTicker: { ...fallback.overridesByTicker, ...stored.overridesByTicker },
+      positionByTicker: { ...fallback.positionByTicker, ...stored.positionByTicker },
+      settings: { ...fallback.settings, ...stored.settings },
+    };
   } catch {
     return fallback;
   }
@@ -226,7 +245,9 @@ function saveState() {
 }
 
 function assetByTicker(ticker = state.selectedTicker) {
-  return catalog.find((asset) => asset.ticker === ticker) || catalog[0];
+  const base = catalog.find((asset) => asset.ticker === ticker) || catalog[0];
+  const override = state.overridesByTicker?.[base.ticker] || {};
+  return { ...base, ...override };
 }
 
 function portfolioAssets() {
@@ -235,6 +256,18 @@ function portfolioAssets() {
 
 function formatPrice(asset) {
   return `${asset.currency}${asset.price.toLocaleString("es-ES", { maximumFractionDigits: asset.price > 100 ? 1 : 2 })}`;
+}
+
+function positionValue(asset) {
+  const position = state.positionByTicker?.[asset.ticker] || { shares: 0, averageCost: 0 };
+  return position.shares * asset.price;
+}
+
+function formatCompactValue(value) {
+  if (!Number.isFinite(value) || value <= 0) return "Sin posicion";
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return value.toFixed(0);
 }
 
 function toneForScore(score) {
@@ -285,17 +318,34 @@ function assetRow(asset, mode = "portfolio") {
   }
 
   return `
-    <button class="asset-row" type="button" data-open-ticker="${asset.ticker}" data-route="detail">
-      <span class="logo-mark">${logoText(asset.ticker)}</span>
+    <article class="asset-row asset-row-action">
+      <button class="asset-main" type="button" data-open-ticker="${asset.ticker}" data-route="detail">
+        <span class="logo-mark">${logoText(asset.ticker)}</span>
+        <span>
+          <h3>${asset.ticker}</h3>
+          <p>${asset.name}<br><span class="${tone}">Score ${asset.score}/100</span></p>
+        </span>
+        <span class="asset-price">
+          <strong>${formatPrice(asset)}</strong>
+          <span class="${signalClass}">${signalForScore(asset.score)}</span>
+          <p class="${asset.change >= 0 ? "good" : "bad"}">${asset.change >= 0 ? "+" : ""}${asset.change}% · ${formatCompactValue(positionValue(asset))}</p>
+        </span>
+      </button>
+      <button class="remove-mini" type="button" data-remove-ticker="${asset.ticker}" aria-label="Quitar activo">x</button>
+    </article>
+  `;
+}
+
+function eventRow(event, asset) {
+  const [type, date, note] = event;
+  return `
+    <button class="calendar-row" type="button" data-open-ticker="${asset.ticker}" data-route="detail">
+      <span class="calendar-date">${date}</span>
       <span>
         <h3>${asset.ticker}</h3>
-        <p>${asset.name}<br><span class="${tone}">Score ${asset.score}/100</span></p>
+        <p>${type} · ${note}</p>
       </span>
-      <span class="asset-price">
-        <strong>${formatPrice(asset)}</strong>
-        <span class="${signalClass}">${signalForScore(asset.score)}</span>
-        <p class="${asset.change >= 0 ? "good" : "bad"}">${asset.change >= 0 ? "+" : ""}${asset.change}%</p>
-      </span>
+      <strong class="${toneForScore(asset.score)}">${asset.score}</strong>
     </button>
   `;
 }
@@ -320,6 +370,28 @@ function renderWatchlist() {
     <div><strong class="warn">${counts.watch}</strong><span>vigilar</span></div>
     <div><strong class="bad">${counts.broken}</strong><span>rota</span></div>
   `;
+
+  const quickActions = document.querySelector("#screen-watchlist .quick-actions");
+  if (quickActions) {
+    quickActions.innerHTML = `
+      <button data-route="history" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
+        <span>Historico de scores</span>
+      </button>
+      <button data-route="calendar" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v4" /><path d="M17 3v4" /><path d="M4 8h16" /><path d="M5 5h14v15H5z" /></svg>
+        <span>Calendario</span>
+      </button>
+      <button data-route="discovery" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" /><path d="m7.8 7.8 2.1 2.1" /><path d="m14.1 14.1 2.1 2.1" /><path d="m16.2 7.8-2.1 2.1" /><path d="m9.9 14.1-2.1 2.1" /></svg>
+        <span>Thesis Discovery</span>
+      </button>
+      <button type="button" data-refresh-local>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-14.9 4M4 12A8 8 0 0 1 18.9 8M18 4v4h-4M6 20v-4h4" /></svg>
+        <span>Actualizar local</span>
+      </button>
+    `;
+  }
 
   watchlistRows.innerHTML = assets.length
     ? assets.map((asset) => assetRow(asset)).join("")
@@ -370,7 +442,19 @@ function renderDetail() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v10l8 4 8-4V7z" /><path d="M12 7v14" /></svg>
         <span>Ver tesis</span>
       </button>
+      <button data-route="calendar" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v4" /><path d="M17 3v4" /><path d="M4 8h16" /><path d="M5 5h14v15H5z" /></svg>
+        <span>Calendario</span>
+      </button>
+      <button type="button" data-edit-position="${asset.ticker}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16" /><path d="M7 16l9-9 3 3-9 9H7z" /></svg>
+        <span>Posicion</span>
+      </button>
     </div>
+    <article class="panel">
+      <h2>Posicion</h2>
+      <dl class="metric-list">${positionMetrics(asset)}</dl>
+    </article>
     <article class="panel">
       <h2>Grafico de precio</h2>
       <div class="range-tabs"><span>1D</span><span>1S</span><span class="is-on">1M</span><span>3M</span><span>1A</span><span>5A</span></div>
@@ -388,6 +472,21 @@ function renderDetail() {
       ${asset.events.map(([type, date, note]) => `<p><strong>${date}</strong><span>${type}</span>${note}</p>`).join("")}
     </article>
   `;
+}
+
+function positionMetrics(asset) {
+  const position = state.positionByTicker?.[asset.ticker] || { shares: 0, averageCost: 0 };
+  const value = position.shares * asset.price;
+  const cost = position.shares * position.averageCost;
+  const pnl = cost ? ((value - cost) / cost) * 100 : 0;
+  return [
+    ["Titulos", position.shares || 0],
+    ["Coste medio", position.averageCost ? `${asset.currency}${position.averageCost}` : "No definido"],
+    ["Valor estimado", value ? `${asset.currency}${value.toLocaleString("es-ES", { maximumFractionDigits: 0 })}` : "No definido"],
+    ["Rentabilidad", cost ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%` : "No definida"],
+  ]
+    .map(([key, valueText]) => `<div><dt>${key}</dt><dd>${valueText}</dd></div>`)
+    .join("");
 }
 
 function reviewSummary(asset) {
@@ -445,6 +544,16 @@ function renderThesis() {
       <div class="logo-mark">${logoText(asset.ticker)}</div>
       <div><h2>${asset.ticker}</h2><p>${asset.company}</p></div>
     </article>
+    <div class="quick-actions compact-actions">
+      <button type="button" data-edit-thesis="${asset.ticker}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16" /><path d="M7 16l9-9 3 3-9 9H7z" /></svg>
+        <span>Editar tesis</span>
+      </button>
+      <button type="button" data-run-review="${asset.ticker}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-14.9 4M4 12A8 8 0 0 1 18.9 8M18 4v4h-4M6 20v-4h4" /></svg>
+        <span>Revisar ahora</span>
+      </button>
+    </div>
     <article class="panel">
       <h2>Resumen de la tesis</h2>
       <p>${asset.thesis}</p>
@@ -491,6 +600,161 @@ function renderHistory() {
       <div class="legend"><span class="good">Tesis</span><span>Fundamentales</span><span class="warn">Valoracion</span><span class="purple-text">Noticias</span></div>
     </article>
   `;
+}
+
+function renderCalendar() {
+  const items = portfolioAssets()
+    .flatMap((asset) => asset.events.map((event) => ({ asset, event })))
+    .sort((a, b) => a.event[1].localeCompare(b.event[1]));
+  document.querySelector("#screen-calendar").innerHTML = `
+    <div class="range-tabs large"><span class="is-on">Todos</span><span>Resultados</span><span>Dividendos</span><span>Watchlist</span></div>
+    <article class="panel">
+      <h2>Eventos que alimentan la tesis</h2>
+      <p>Resultados, dividendos y catalizadores se usan como contexto en la revision manual. No se consulta internet automaticamente.</p>
+    </article>
+    <div class="calendar-list">
+      ${items.length ? items.map(({ asset, event }) => eventRow(event, asset)).join("") : '<article class="panel"><h2>Sin eventos</h2><p>Edita una tesis y anade eventos para construir el calendario.</p></article>'}
+    </div>
+  `;
+}
+
+function renderSettings() {
+  document.querySelector("#screen-settings").innerHTML = `
+    <article class="panel">
+      <h2>Cuenta</h2>
+      <dl class="metric-list">
+        <div><dt>Sincronizacion en la nube</dt><dd class="warn">Desactivada</dd></div>
+        <div><dt>Datos guardados</dt><dd>${state.portfolio.length} activos</dd></div>
+      </dl>
+    </article>
+    <article class="panel">
+      <h2>Datos</h2>
+      <dl class="metric-list">
+        <div><dt>Fuente financiera MVP</dt><dd>${state.settings.dataSource}</dd></div>
+        <div><dt>Revision automatica</dt><dd>Desactivada</dd></div>
+        <div><dt>Web search</dt><dd class="warn">Siempre manual</dd></div>
+      </dl>
+      <button class="wide-button ghost" type="button" data-refresh-local>Actualizar datos locales</button>
+    </article>
+    <article class="panel">
+      <h2>Backup local</h2>
+      <p>Exporta el estado para moverlo entre navegadores o restaurarlo despues.</p>
+      <textarea class="backup-box" id="backupBox" placeholder="Aqui aparecera o pegaras tu backup JSON"></textarea>
+      <div class="button-grid">
+        <button class="wide-button ghost" type="button" data-export-state>Exportar</button>
+        <button class="wide-button ghost" type="button" data-import-state>Importar</button>
+      </div>
+      <button class="wide-button ghost danger-action" type="button" data-reset-state>Reset local</button>
+    </article>
+    <article class="panel">
+      <h2>IA</h2>
+      <dl class="metric-list">
+        <div><dt>Modelo previsto</dt><dd>gpt-5.4-mini</dd></div>
+        <div><dt>Modo por defecto</dt><dd>Sin busquedas</dd></div>
+        <div><dt>Revision</dt><dd>Bajo demanda</dd></div>
+      </dl>
+    </article>
+  `;
+}
+
+function listToText(items) {
+  return (items || []).join("\n");
+}
+
+function textToList(text) {
+  return text
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function eventsToText(events) {
+  return (events || []).map(([type, date, note]) => `${type} | ${date} | ${note}`).join("\n");
+}
+
+function textToEvents(text) {
+  return textToList(text).map((line) => {
+    const [type = "Evento", date = "Sin fecha", note = "Pendiente de describir"] = line.split("|").map((item) => item.trim());
+    return [type, date, note];
+  });
+}
+
+function openDialog(title, bodyHtml) {
+  closeDialog();
+  const dialog = document.createElement("section");
+  dialog.className = "modal-backdrop";
+  dialog.innerHTML = `
+    <form class="modal-card">
+      <div class="modal-header">
+        <h2>${title}</h2>
+        <button class="icon-button" type="button" data-close-dialog aria-label="Cerrar">x</button>
+      </div>
+      ${bodyHtml}
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  return dialog;
+}
+
+function closeDialog() {
+  document.querySelector(".modal-backdrop")?.remove();
+}
+
+function openThesisEditor(ticker) {
+  const asset = assetByTicker(ticker);
+  const dialog = openDialog(
+    `Editar ${asset.ticker}`,
+    `
+      <label class="form-field">Tesis<textarea name="thesis">${asset.thesis}</textarea></label>
+      <label class="form-field">Drivers<textarea name="drivers">${listToText(asset.drivers)}</textarea></label>
+      <label class="form-field">Breakers<textarea name="breakers">${listToText(asset.breakers)}</textarea></label>
+      <label class="form-field">Riesgos<textarea name="risks">${listToText(asset.risks)}</textarea></label>
+      <label class="form-field">Eventos<textarea name="events">${eventsToText(asset.events)}</textarea><small>Formato: Tipo | fecha | impacto en tesis</small></label>
+      <button class="wide-button" type="submit">Guardar tesis</button>
+    `
+  );
+  dialog.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    state.overridesByTicker[ticker] = {
+      ...(state.overridesByTicker[ticker] || {}),
+      thesis: form.get("thesis").trim(),
+      drivers: textToList(form.get("drivers")),
+      breakers: textToList(form.get("breakers")),
+      risks: textToList(form.get("risks")),
+      events: textToEvents(form.get("events")),
+    };
+    saveState();
+    closeDialog();
+    renderActiveScreen(document.querySelector(".screen.is-active").id.replace("screen-", ""));
+    showToast("Tesis guardada");
+  });
+}
+
+function openPositionEditor(ticker) {
+  const asset = assetByTicker(ticker);
+  const position = state.positionByTicker[ticker] || { shares: 0, averageCost: 0 };
+  const dialog = openDialog(
+    `Posicion ${asset.ticker}`,
+    `
+      <label class="form-field">Titulos<input name="shares" type="number" min="0" step="0.0001" value="${position.shares || 0}" /></label>
+      <label class="form-field">Coste medio<input name="averageCost" type="number" min="0" step="0.0001" value="${position.averageCost || 0}" /></label>
+      <button class="wide-button" type="submit">Guardar posicion</button>
+      <button class="wide-button ghost danger-action" type="button" data-remove-ticker="${ticker}">Quitar del portfolio</button>
+    `
+  );
+  dialog.querySelector("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    state.positionByTicker[ticker] = {
+      shares: Number(form.get("shares")) || 0,
+      averageCost: Number(form.get("averageCost")) || 0,
+    };
+    saveState();
+    closeDialog();
+    renderActiveScreen(document.querySelector(".screen.is-active").id.replace("screen-", ""));
+    showToast("Posicion guardada");
+  });
 }
 
 function renderSearch() {
@@ -540,8 +804,10 @@ function renderActiveScreen(route) {
   if (route === "report") renderReport();
   if (route === "thesis") renderThesis();
   if (route === "history") renderHistory();
+  if (route === "calendar") renderCalendar();
   if (route === "add") renderSearch();
   if (route === "discovery") renderDiscovery();
+  if (route === "settings") renderSettings();
 }
 
 function setRoute(route, push = true) {
@@ -565,11 +831,36 @@ function setRoute(route, push = true) {
 function runManualReview() {
   const asset = assetByTicker();
   const now = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const nextScore = calculateLocalScore(asset);
+  const history = [...(asset.history || [])].slice(-14);
+  history.push(nextScore);
+  state.overridesByTicker[asset.ticker] = {
+    ...(state.overridesByTicker[asset.ticker] || {}),
+    previousScore: asset.score,
+    score: nextScore,
+    history,
+  };
   const eventText = asset.events.length ? `${asset.events.length} evento(s) proximos incorporados al contexto.` : "Sin eventos proximos.";
-  const message = `Revision local completada a las ${now}. La tesis sigue <strong class="${toneForScore(asset.score)}">${signalForScore(asset.score)}</strong>: ${eventText} No se ha usado web search.`;
+  const message = `Revision local completada a las ${now}. La tesis queda <strong class="${toneForScore(nextScore)}">${signalForScore(nextScore)}</strong>: ${eventText} No se ha usado web search.`;
   state.lastReviewByTicker[asset.ticker] = { at: now, message };
   saveState();
   renderReport();
+}
+
+function calculateLocalScore(asset) {
+  const structure =
+    Math.min(asset.drivers.length, 6) * 3 -
+    Math.max(asset.breakers.length - 2, 0) * 2 -
+    Math.max(asset.risks.length - 3, 0);
+  const eventSupport = Math.min(asset.events.length, 4) * 1.5;
+  const componentScore =
+    asset.thesisScore * 0.34 +
+    asset.fundamentalsScore * 0.24 +
+    asset.valuationScore * 0.16 +
+    asset.newsScore * 0.14 +
+    asset.technicalScore * 0.12;
+  const trend = (asset.history.at(-1) || asset.score) - (asset.history.at(-4) || asset.score);
+  return Math.max(0, Math.min(100, Math.round(componentScore + structure + eventSupport + trend * 0.25 - 14)));
 }
 
 function addTicker(ticker) {
@@ -578,6 +869,60 @@ function addTicker(ticker) {
   saveState();
   showToast(`${ticker} anadido al portfolio`);
   setRoute("detail");
+}
+
+function removeTicker(ticker) {
+  state.portfolio = state.portfolio.filter((item) => item !== ticker);
+  if (state.selectedTicker === ticker) state.selectedTicker = state.portfolio[0] || "0388.HK";
+  saveState();
+  closeDialog();
+  showToast(`${ticker} quitado del portfolio`);
+  setRoute("watchlist");
+}
+
+function refreshLocalData() {
+  portfolioAssets().forEach((asset, index) => {
+    const movement = Number((((asset.ticker.length + index * 3) % 7) / 10 - 0.2).toFixed(1));
+    const nextPrice = Math.max(0.01, asset.price * (1 + movement / 100));
+    state.overridesByTicker[asset.ticker] = {
+      ...(state.overridesByTicker[asset.ticker] || {}),
+      price: Number(nextPrice.toFixed(nextPrice > 100 ? 1 : 2)),
+      change: movement,
+    };
+  });
+  saveState();
+  renderWatchlist();
+  showToast("Datos locales actualizados");
+}
+
+function exportState() {
+  const backupBox = document.querySelector("#backupBox");
+  if (backupBox) {
+    backupBox.value = JSON.stringify(state, null, 2);
+    backupBox.focus();
+    backupBox.select();
+  }
+  showToast("Backup generado");
+}
+
+function importState() {
+  const backupBox = document.querySelector("#backupBox");
+  try {
+    const imported = JSON.parse(backupBox.value);
+    state = { ...state, ...imported };
+    saveState();
+    showToast("Backup importado");
+    setRoute("watchlist");
+  } catch {
+    showToast("JSON invalido");
+  }
+}
+
+function resetState() {
+  localStorage.removeItem(STORAGE_KEY);
+  state = loadState();
+  showToast("Datos locales reiniciados");
+  setRoute("watchlist");
 }
 
 function showToast(message) {
@@ -592,12 +937,25 @@ function showToast(message) {
   window.setTimeout(() => toast.classList.remove("is-visible"), 1800);
 }
 
+function ensureDynamicScreens() {
+  if (!document.querySelector("#screen-calendar")) {
+    const screen = document.createElement("section");
+    screen.className = "screen";
+    screen.id = "screen-calendar";
+    screen.dataset.title = "Calendario";
+    screen.dataset.subtitle = "Eventos de tesis";
+    screen.dataset.action = "none";
+    document.querySelector(".bottom-nav").before(screen);
+  }
+}
+
 function installServiceWorker() {
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 }
 
+ensureDynamicScreens();
 renderWatchlist();
 renderSearch();
 renderDiscovery();
@@ -605,9 +963,61 @@ setRoute("watchlist", false);
 installServiceWorker();
 
 document.addEventListener("click", (event) => {
+  const closeButton = event.target.closest("[data-close-dialog]");
+  if (closeButton) {
+    closeDialog();
+    return;
+  }
+
   const addButton = event.target.closest("[data-add-ticker]");
   if (addButton) {
     addTicker(addButton.dataset.addTicker);
+    return;
+  }
+
+  const removeButton = event.target.closest("[data-remove-ticker]");
+  if (removeButton) {
+    removeTicker(removeButton.dataset.removeTicker);
+    return;
+  }
+
+  const editThesisButton = event.target.closest("[data-edit-thesis]");
+  if (editThesisButton) {
+    openThesisEditor(editThesisButton.dataset.editThesis);
+    return;
+  }
+
+  const editPositionButton = event.target.closest("[data-edit-position]");
+  if (editPositionButton) {
+    openPositionEditor(editPositionButton.dataset.editPosition);
+    return;
+  }
+
+  const reviewButton = event.target.closest("[data-run-review]");
+  if (reviewButton) {
+    state.selectedTicker = reviewButton.dataset.runReview;
+    runManualReview();
+    setRoute("report");
+    return;
+  }
+
+  if (event.target.closest("[data-refresh-local]")) {
+    refreshLocalData();
+    return;
+  }
+
+  if (event.target.closest("[data-export-state]")) {
+    exportState();
+    return;
+  }
+
+  if (event.target.closest("[data-import-state]")) {
+    importState();
+    return;
+  }
+
+  if (event.target.closest("[data-reset-state]")) {
+    resetState();
     return;
   }
 
