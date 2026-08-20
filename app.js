@@ -1,4 +1,8 @@
-const STORAGE_KEY = "thesis-radar-state-v3";
+const STORAGE_KEY = "thesis-radar-state-v4";
+const DATA_SOURCES = [
+  { id: "stooq", label: "Stooq CSV" },
+  { id: "yahoo-chart", label: "Yahoo chart" },
+];
 
 const catalog = [
   {
@@ -219,10 +223,13 @@ function loadState() {
       "D05.SI": { shares: 60, averageCost: 68 },
       "M44U.SI": { shares: 1200, averageCost: 1.12 },
     },
+    customCatalog: [],
+    dataStatusByTicker: {},
+    lastDataRefresh: null,
     settings: {
       webSearch: false,
       autoReviews: false,
-      dataSource: "Local cache / Yahoo-ready",
+      dataSource: "Stooq/Yahoo manual",
     },
   };
   try {
@@ -233,6 +240,8 @@ function loadState() {
       lastReviewByTicker: { ...fallback.lastReviewByTicker, ...stored.lastReviewByTicker },
       overridesByTicker: { ...fallback.overridesByTicker, ...stored.overridesByTicker },
       positionByTicker: { ...fallback.positionByTicker, ...stored.positionByTicker },
+      customCatalog: Array.isArray(stored.customCatalog) ? stored.customCatalog : fallback.customCatalog,
+      dataStatusByTicker: { ...fallback.dataStatusByTicker, ...stored.dataStatusByTicker },
       settings: { ...fallback.settings, ...stored.settings },
     };
   } catch {
@@ -244,8 +253,12 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function allAssets() {
+  return [...catalog, ...(state.customCatalog || [])];
+}
+
 function assetByTicker(ticker = state.selectedTicker) {
-  const base = catalog.find((asset) => asset.ticker === ticker) || catalog[0];
+  const base = allAssets().find((asset) => asset.ticker === ticker) || catalog[0];
   const override = state.overridesByTicker?.[base.ticker] || {};
   return { ...base, ...override };
 }
@@ -268,6 +281,11 @@ function formatCompactValue(value) {
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
   return value.toFixed(0);
+}
+
+function formatTimestamp(value) {
+  if (!value) return "Pendiente";
+  return new Date(value).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function toneForScore(score) {
@@ -352,6 +370,8 @@ function eventRow(event, asset) {
 
 function renderWatchlist() {
   const assets = portfolioAssets();
+  const refreshLabel = state.lastDataRefresh ? `Ultima actualizacion: ${formatTimestamp(state.lastDataRefresh)}` : "Ultima actualizacion: manual";
+  document.querySelector("#screen-watchlist .tiny").textContent = `${refreshLabel}. Sin web search.`;
   const counts = assets.reduce(
     (acc, asset) => {
       const signal = signalForScore(asset.score);
@@ -388,7 +408,7 @@ function renderWatchlist() {
       </button>
       <button type="button" data-refresh-local>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-14.9 4M4 12A8 8 0 0 1 18.9 8M18 4v4h-4M6 20v-4h4" /></svg>
-        <span>Actualizar local</span>
+        <span>Actualizar datos</span>
       </button>
     `;
   }
@@ -415,6 +435,7 @@ function sparkline(values, className = "") {
 
 function renderDetail() {
   const asset = assetByTicker();
+  const dataStatus = state.dataStatusByTicker?.[asset.ticker];
   document.querySelector("#screen-detail").innerHTML = `
     <article class="asset-hero">
       <div class="logo-mark">${logoText(asset.ticker)}</div>
@@ -454,6 +475,14 @@ function renderDetail() {
     <article class="panel">
       <h2>Posicion</h2>
       <dl class="metric-list">${positionMetrics(asset)}</dl>
+    </article>
+    <article class="panel data-status-card">
+      <h2>Datos financieros</h2>
+      <dl class="metric-list">
+        <div><dt>Fuente</dt><dd>${dataStatus?.source || "Catalogo local"}</dd></div>
+        <div><dt>Actualizado</dt><dd>${formatTimestamp(dataStatus?.at)}</dd></div>
+        <div><dt>Estado</dt><dd class="${dataStatus?.ok === false ? "warn" : "good"}">${dataStatus?.message || "Listo para actualizar manualmente"}</dd></div>
+      </dl>
     </article>
     <article class="panel">
       <h2>Grafico de precio</h2>
@@ -502,6 +531,7 @@ function scoreLine(label, value) {
 function renderReport() {
   const asset = assetByTicker();
   const last = state.lastReviewByTicker[asset.ticker];
+  const dataStatus = state.dataStatusByTicker?.[asset.ticker];
   const scoreDelta = asset.score - asset.previousScore;
   document.querySelector("#screen-report").innerHTML = `
     <article class="panel report-card">
@@ -531,7 +561,7 @@ function renderReport() {
     <article class="panel insight-list">
       <h2>Que cambio desde la ultima revision</h2>
       <p><span class="ok-dot"></span>Eventos guardados revisados contra drivers y breakers.</p>
-      <p><span class="warn-dot"></span>Datos financieros pendientes de conectar a JSON Yahoo.</p>
+      <p><span class="${dataStatus?.ok ? "ok-dot" : "warn-dot"}"></span>${dataStatus?.message || "Datos financieros pendientes de actualizar manualmente."}</p>
     </article>
   `;
   document.querySelector("#manualReviewButton").addEventListener("click", runManualReview);
@@ -619,6 +649,7 @@ function renderCalendar() {
 }
 
 function renderSettings() {
+  const failures = Object.values(state.dataStatusByTicker || {}).filter((item) => item.ok === false).length;
   document.querySelector("#screen-settings").innerHTML = `
     <article class="panel">
       <h2>Cuenta</h2>
@@ -631,10 +662,13 @@ function renderSettings() {
       <h2>Datos</h2>
       <dl class="metric-list">
         <div><dt>Fuente financiera MVP</dt><dd>${state.settings.dataSource}</dd></div>
+        <div><dt>Ultima actualizacion</dt><dd>${formatTimestamp(state.lastDataRefresh)}</dd></div>
+        <div><dt>Fallos de fuente</dt><dd class="${failures ? "warn" : "good"}">${failures}</dd></div>
         <div><dt>Revision automatica</dt><dd>Desactivada</dd></div>
         <div><dt>Web search</dt><dd class="warn">Siempre manual</dd></div>
       </dl>
-      <button class="wide-button ghost" type="button" data-refresh-local>Actualizar datos locales</button>
+      <button class="wide-button ghost" type="button" data-refresh-local>Actualizar precios gratis</button>
+      <button class="wide-button ghost" type="button" data-simulate-local>Simular movimiento local</button>
     </article>
     <article class="panel">
       <h2>Backup local</h2>
@@ -760,20 +794,27 @@ function openPositionEditor(ticker) {
 function renderSearch() {
   const term = tickerSearch?.value?.trim().toLowerCase() || "";
   const portfolio = new Set(state.portfolio);
-  const results = catalog.filter((asset) => {
+  const results = allAssets().filter((asset) => {
     const haystack = `${asset.ticker} ${asset.name} ${asset.company} ${asset.sector}`.toLowerCase();
     return !term || haystack.includes(term);
   });
-  searchResults.innerHTML = results
+  const rows = results
     .filter((asset) => !portfolio.has(asset.ticker) || term)
     .map((asset) => assetRow(asset, "search"))
     .join("");
+  const normalizedTicker = tickerSearch?.value?.trim().toUpperCase();
+  const canCreate = normalizedTicker && !allAssets().some((asset) => asset.ticker === normalizedTicker);
+  searchResults.innerHTML = `${rows}${
+    canCreate
+      ? `<article class="panel empty-state"><h2>${normalizedTicker}</h2><p>No esta en el catalogo local. Puedes anadirlo y completar tesis, posicion y eventos.</p><button class="wide-button ghost" type="button" data-create-ticker="${normalizedTicker}">Crear ticker manual</button></article>`
+      : ""
+  }`;
 }
 
 function renderDiscovery() {
   const thesisText = document.querySelector("#thesisInput")?.value || "";
   const terms = thesisText.toLowerCase();
-  const scored = catalog
+  const scored = allAssets()
     .map((asset) => {
       let fit = asset.score;
       if (terms.includes("china") && asset.ticker.endsWith(".HK")) fit += 4;
@@ -871,6 +912,38 @@ function addTicker(ticker) {
   setRoute("detail");
 }
 
+function createTicker(ticker) {
+  const normalized = ticker.trim().toUpperCase();
+  if (!normalized) return;
+  if (!allAssets().some((asset) => asset.ticker === normalized)) {
+    state.customCatalog.push({
+      ticker: normalized,
+      name: normalized,
+      company: "Activo creado manualmente",
+      sector: "Pendiente de clasificar",
+      currency: "",
+      price: 1,
+      change: 0,
+      score: 60,
+      previousScore: 60,
+      thesisScore: 60,
+      fundamentalsScore: 55,
+      valuationScore: 55,
+      newsScore: 50,
+      technicalScore: 50,
+      signal: "vigilar",
+      thesis: "Pendiente de redactar tesis de inversion.",
+      drivers: ["Driver pendiente"],
+      breakers: ["Breaker pendiente"],
+      risks: ["Riesgo pendiente"],
+      keyLevels: [["Precio de compra", "Pendiente"], ["Compra fuerte", "Pendiente"], ["Maximo 52 semanas", "Pendiente"], ["Minimo 52 semanas", "Pendiente"]],
+      events: [["Resultados", "Sin fecha", "Completar calendario"], ["Dividendo", "Sin fecha", "Completar si aplica"]],
+      history: [60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60],
+    });
+  }
+  addTicker(normalized);
+}
+
 function removeTicker(ticker) {
   state.portfolio = state.portfolio.filter((item) => item !== ticker);
   if (state.selectedTicker === ticker) state.selectedTicker = state.portfolio[0] || "0388.HK";
@@ -880,7 +953,7 @@ function removeTicker(ticker) {
   setRoute("watchlist");
 }
 
-function refreshLocalData() {
+function simulateLocalData() {
   portfolioAssets().forEach((asset, index) => {
     const movement = Number((((asset.ticker.length + index * 3) % 7) / 10 - 0.2).toFixed(1));
     const nextPrice = Math.max(0.01, asset.price * (1 + movement / 100));
@@ -889,10 +962,115 @@ function refreshLocalData() {
       price: Number(nextPrice.toFixed(nextPrice > 100 ? 1 : 2)),
       change: movement,
     };
+    state.dataStatusByTicker[asset.ticker] = {
+      ok: true,
+      source: "Simulacion local",
+      at: new Date().toISOString(),
+      message: "Movimiento local simulado",
+    };
   });
+  state.lastDataRefresh = new Date().toISOString();
   saveState();
   renderWatchlist();
   showToast("Datos locales actualizados");
+}
+
+async function refreshMarketData() {
+  const assets = portfolioAssets();
+  if (!assets.length) {
+    showToast("No hay activos que actualizar");
+    return;
+  }
+  showToast("Actualizando precios...");
+  const results = await Promise.all(assets.map((asset) => fetchMarketQuote(asset)));
+  results.forEach(({ asset, quote, error }) => {
+    if (quote) {
+      state.overridesByTicker[asset.ticker] = {
+        ...(state.overridesByTicker[asset.ticker] || {}),
+        price: quote.price,
+        change: quote.change,
+        currency: quote.currency || asset.currency,
+      };
+      state.dataStatusByTicker[asset.ticker] = {
+        ok: true,
+        source: quote.source,
+        at: new Date().toISOString(),
+        message: `Precio actualizado: ${quote.price}${quote.currency ? ` ${quote.currency}` : ""}`,
+      };
+      return;
+    }
+    state.dataStatusByTicker[asset.ticker] = {
+      ok: false,
+      source: "Stooq/Yahoo",
+      at: new Date().toISOString(),
+      message: error || "No se pudo leer la fuente gratuita desde el navegador",
+    };
+  });
+  state.lastDataRefresh = new Date().toISOString();
+  saveState();
+  renderActiveScreen(document.querySelector(".screen.is-active").id.replace("screen-", ""));
+  const ok = results.filter((item) => item.quote).length;
+  showToast(`${ok}/${results.length} precios actualizados`);
+}
+
+async function fetchMarketQuote(asset) {
+  for (const source of DATA_SOURCES) {
+    try {
+      const quote = source.id === "stooq" ? await fetchStooqQuote(asset) : await fetchYahooChartQuote(asset);
+      if (quote) return { asset, quote: { ...quote, source: source.label } };
+    } catch (error) {
+      if (source.id === DATA_SOURCES.at(-1).id) {
+        return { asset, error: error.message };
+      }
+    }
+  }
+  return { asset, error: "Fuente sin datos para este ticker" };
+}
+
+function stooqSymbol(ticker) {
+  const normalized = ticker.toLowerCase();
+  const replacements = [
+    [/\.hk$/, ".hk"],
+    [/\.si$/, ".sg"],
+    [/\.ss$/, ".cn"],
+    [/\.sz$/, ".cn"],
+    [/\.ks$/, ".kr"],
+    [/\.as$/, ".nl"],
+  ];
+  const [pattern, suffix] = replacements.find(([pattern]) => pattern.test(normalized)) || [];
+  if (pattern) return normalized.replace(pattern, suffix);
+  if (!normalized.includes(".")) return `${normalized}.us`;
+  return normalized;
+}
+
+async function fetchStooqQuote(asset) {
+  const url = `https://stooq.com/q/l/?s=${encodeURIComponent(stooqSymbol(asset.ticker))}&f=sd2t2c&e=csv`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Stooq HTTP ${response.status}`);
+  const text = await response.text();
+  const [, row] = text.trim().split(/\r?\n/);
+  if (!row || row.includes("N/D")) return null;
+  const [symbol, date, time, close] = row.split(",");
+  const price = Number(close);
+  if (!Number.isFinite(price)) return null;
+  const previousPrice = Number(asset.price) || price;
+  const change = previousPrice ? Number((((price - previousPrice) / previousPrice) * 100).toFixed(2)) : 0;
+  return { price: Number(price.toFixed(price > 100 ? 2 : 4)), change, currency: asset.currency, meta: `${symbol} ${date} ${time}` };
+}
+
+async function fetchYahooChartQuote(asset) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(asset.ticker)}?range=5d&interval=1d`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Yahoo HTTP ${response.status}`);
+  const data = await response.json();
+  const result = data?.chart?.result?.[0];
+  const meta = result?.meta;
+  const closes = (result?.indicators?.quote?.[0]?.close || []).filter((value) => Number.isFinite(value));
+  if (!meta?.regularMarketPrice && !closes.length) return null;
+  const price = Number(meta.regularMarketPrice || closes.at(-1));
+  const previousPrice = Number(closes.at(-2) || meta.chartPreviousClose || asset.price || price);
+  const change = previousPrice ? Number((((price - previousPrice) / previousPrice) * 100).toFixed(2)) : 0;
+  return { price: Number(price.toFixed(price > 100 ? 2 : 4)), change, currency: meta.currency ? `${meta.currency} ` : asset.currency };
 }
 
 function exportState() {
@@ -975,6 +1153,12 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const createButton = event.target.closest("[data-create-ticker]");
+  if (createButton) {
+    createTicker(createButton.dataset.createTicker);
+    return;
+  }
+
   const removeButton = event.target.closest("[data-remove-ticker]");
   if (removeButton) {
     removeTicker(removeButton.dataset.removeTicker);
@@ -1002,7 +1186,12 @@ document.addEventListener("click", (event) => {
   }
 
   if (event.target.closest("[data-refresh-local]")) {
-    refreshLocalData();
+    refreshMarketData();
+    return;
+  }
+
+  if (event.target.closest("[data-simulate-local]")) {
+    simulateLocalData();
     return;
   }
 

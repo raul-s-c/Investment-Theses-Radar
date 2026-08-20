@@ -10,32 +10,41 @@ PWA mobile-first para monitorizar portfolio y validar tesis de inversion manualm
 - Sin revisiones automaticas.
 - Sin web search por defecto.
 - Sin API financiera de pago.
-- Preparada para usar datos locales generados desde Yahoo Finance o una fuente similar.
+- Actualizacion manual de precios con fuentes gratuitas experimentales: Stooq CSV y Yahoo chart.
+- Fallback de simulacion local si el navegador bloquea la fuente externa.
+- Alta manual de tickers fuera del catalogo inicial.
+- Calendario alimentado por resultados, dividendos y catalizadores editables.
 
 ## Probar localmente
 
 Abre `index.html` en el navegador o sirve esta carpeta con cualquier servidor estatico.
 
 ```powershell
-python -m http.server 8080
+node -e "const http=require('http'),fs=require('fs'),path=require('path');http.createServer((req,res)=>{const p=path.join(process.cwd(),req.url==='/'?'index.html':req.url.split('?')[0]);fs.readFile(p,(e,d)=>{res.writeHead(e?404:200);res.end(e?'not found':d)})}).listen(8080)"
 ```
 
 Despues abre:
 
 ```text
-http://127.0.0.1:8080/apps/investment-theses-radar/
+http://127.0.0.1:8080/
 ```
 
 ## GitHub Pages
 
-La carpeta esta pensada para publicarse como artefacto estatico. La app no necesita backend para el MVP.
+La rama `gh-pages` publica la app como artefacto estatico en la raiz del repositorio:
+
+```text
+https://raul-s-c.github.io/Investment-Theses-Radar/
+```
+
+La app no necesita backend para el MVP.
 
 ## Datos financieros gratuitos
 
-Para el siguiente paso, la arquitectura recomendada es:
+La app intenta actualizar precios desde el navegador sin busquedas web. Para fundamentales mas profundos, la arquitectura recomendada es:
 
 ```text
-yfinance / yahoo-finance2
+yfinance / yahoo-finance2 en una accion/proxy propio
 -> genera JSON estatico
 -> GitHub Pages consume ese JSON
 -> revision manual usa cache local
